@@ -833,6 +833,7 @@ inline MethodDesc * MethodTable::IntroducedMethodIterator::GetMethodDesc() const
     return m_pMethodDesc;
 }
 
+#if defined(TWO_LEVEL_VTABLES)
 //==========================================================================================
 inline DWORD MethodTable::GetIndexOfVtableIndirection(DWORD slotNum)
 {
@@ -884,6 +885,200 @@ inline DWORD MethodTable::GetNumVtableIndirections(DWORD wNumVirtuals)
 
     return (wNumVirtuals + (VTABLE_SLOTS_PER_CHUNK - 1)) >> VTABLE_SLOTS_PER_CHUNK_LOG2;
 }
+
+//==========================================================================================
+inline BOOL MethodTable::DoesSlotUtilizeVtableIndirection(DWORD slotNum)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    return TRUE;
+}
+
+#elif defined(SINGLE_LEVEL_VTABLES)
+//==========================================================================================
+inline DWORD MethodTable::GetIndexOfVtableIndirection(DWORD slotNum)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+
+    return slotNum;
+}
+
+//==========================================================================================
+inline DWORD MethodTable::GetStartSlotForVtableIndirection(UINT32 indirectionIndex, DWORD wNumVirtuals)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE(indirectionIndex < GetNumVtableIndirections(wNumVirtuals));
+
+    return indirectionIndex;
+}
+
+//==========================================================================================
+inline DWORD MethodTable::GetEndSlotForVtableIndirection(UINT32 indirectionIndex, DWORD wNumVirtuals)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE(indirectionIndex < GetNumVtableIndirections(wNumVirtuals));
+    return indirectionIndex;
+}
+
+//==========================================================================================
+inline UINT32 MethodTable::GetIndexAfterVtableIndirection(UINT32 slotNum)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE(!"Two level v-tables aren't supported.");
+    return 0;
+}
+
+//==========================================================================================
+inline DWORD MethodTable::GetNumVtableIndirections(DWORD wNumVirtuals)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    return wNumVirtuals;
+}
+
+//==========================================================================================
+inline BOOL MethodTable::DoesSlotUtilizeVtableIndirection(DWORD slotNum)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    return FALSE;
+}
+
+#elif defined(HYBRID_LEVEL_VTABLES)
+//==========================================================================================
+inline DWORD MethodTable::GetIndexOfVtableIndirection(DWORD slotNum)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE((1 << VTABLE_SLOTS_PER_CHUNK_LOG2) == VTABLE_SLOTS_PER_CHUNK);
+
+    DWORD initialChunkSizeSpace = (VTABLE_INITIAL_CHUNK_SIZE > 0) ? 1 : 0;
+
+    if (slotNum < VTABLE_INITIAL_CHUNK_SIZE)
+        return 0;
+    else if (slotNum < (VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES))
+    {
+        return (slotNum - VTABLE_INITIAL_CHUNK_SIZE) + initialChunkSizeSpace;
+    }
+    else
+    {
+        DWORD chunkIndex = (slotNum - (VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES)) >> VTABLE_SLOTS_PER_CHUNK_LOG2;
+        return initialChunkSizeSpace + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES + chunkIndex;
+    }
+}
+
+//==========================================================================================
+inline DWORD MethodTable::GetStartSlotForVtableIndirection(UINT32 indirectionIndex, DWORD wNumVirtuals)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE(indirectionIndex < GetNumVtableIndirections(wNumVirtuals));
+
+    DWORD initialChunkSizeSpace = (VTABLE_INITIAL_CHUNK_SIZE > 0) ? 1 : 0;
+
+    if (indirectionIndex == 0)
+        return 0;
+    else if (indirectionIndex < (VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES + initialChunkSizeSpace))
+    {
+        return (indirectionIndex - initialChunkSizeSpace) + VTABLE_INITIAL_CHUNK_SIZE;
+    }
+    DWORD chunkIndex = indirectionIndex - (initialChunkSizeSpace + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES);
+    return VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES + chunkIndex * VTABLE_SLOTS_PER_CHUNK;
+}
+
+//==========================================================================================
+inline DWORD MethodTable::GetEndSlotForVtableIndirection(UINT32 indirectionIndex, DWORD wNumVirtuals)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE(indirectionIndex < GetNumVtableIndirections(wNumVirtuals));
+
+    _ASSERTE(indirectionIndex < GetNumVtableIndirections(wNumVirtuals));
+
+    DWORD initialChunkSizeSpace = (VTABLE_INITIAL_CHUNK_SIZE > 0) ? 1 : 0;
+    DWORD end;
+
+    if ((indirectionIndex == 0) && initialChunkSizeSpace)
+    {
+        end = VTABLE_INITIAL_CHUNK_SIZE - 1;
+    }
+    else if (indirectionIndex < (VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES + initialChunkSizeSpace))
+    {
+        end = (indirectionIndex - initialChunkSizeSpace) + VTABLE_INITIAL_CHUNK_SIZE;
+    }
+    else
+    {
+        DWORD chunkIndex = indirectionIndex - (initialChunkSizeSpace + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES);
+        end = VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES + (chunkIndex + 1) * VTABLE_SLOTS_PER_CHUNK;
+    }
+
+    if (end > wNumVirtuals)
+    {
+        end = wNumVirtuals;
+    }
+
+    return end;
+}
+
+//==========================================================================================
+inline UINT32 MethodTable::GetIndexAfterVtableIndirection(UINT32 slotNum)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE((1 << VTABLE_SLOTS_PER_CHUNK_LOG2) == VTABLE_SLOTS_PER_CHUNK);
+
+    if (slotNum < VTABLE_INITIAL_CHUNK_SIZE)
+    {
+        return slotNum;
+    }
+    else if (slotNum < (VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES))
+    {
+        _ASSERTE(!"Two level v-tables aren't supported.");
+        return 0;
+    }
+    else
+    {
+        DWORD chunkSlot = slotNum - VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES;
+        return (chunkSlot & (VTABLE_SLOTS_PER_CHUNK - 1));
+    }
+}
+
+//==========================================================================================
+inline DWORD MethodTable::GetNumVtableIndirections(DWORD wNumVirtuals)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE((1 << VTABLE_SLOTS_PER_CHUNK_LOG2) == VTABLE_SLOTS_PER_CHUNK);
+
+    DWORD initialChunkSizeSpace = (VTABLE_INITIAL_CHUNK_SIZE > 0) ? 1 : 0;
+    if (wNumVirtuals == 0)
+        return 0;
+    else if (wNumVirtuals <= VTABLE_INITIAL_CHUNK_SIZE)
+        return 1;
+    else if (wNumVirtuals <= (VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES))
+    {
+        if (initialChunkSizeSpace != 0)
+            return (wNumVirtuals - (VTABLE_INITIAL_CHUNK_SIZE - 1));
+        else
+            return wNumVirtuals;
+    }
+    else
+    {
+        DWORD wNumChunkVirtuals = wNumVirtuals - (VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES);
+        DWORD chunkCount = (wNumChunkVirtuals + (VTABLE_SLOTS_PER_CHUNK - 1)) >> VTABLE_SLOTS_PER_CHUNK_LOG2;
+
+        return initialChunkSizeSpace + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES + chunkCount;
+    }
+}
+
+//==========================================================================================
+inline BOOL MethodTable::DoesSlotUtilizeVtableIndirection(DWORD slotNum)
+{
+    LIMITED_METHOD_DAC_CONTRACT;
+    _ASSERTE((1 << VTABLE_SLOTS_PER_CHUNK_LOG2) == VTABLE_SLOTS_PER_CHUNK);
+    if (slotNum < VTABLE_INITIAL_CHUNK_SIZE)
+        return TRUE;
+    else if (slotNum >= (VTABLE_INITIAL_CHUNK_SIZE + VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES))
+        return TRUE;
+    else
+        return FALSE;
+}
+
+#else
+#error vtable chunking behavior not defined
+#endif
 
 //==========================================================================================
 inline DPTR(MethodTable::VTableIndir_t) MethodTable::GetVtableIndirections()
@@ -1015,13 +1210,6 @@ inline MethodTable::VtableIndirectionSlotIterator MethodTable::IterateVtableIndi
     return VtableIndirectionSlotIterator(this);
 }
 
-//==========================================================================================
-// Create a new iterator over the vtable indirection slots, starting at the index specified
-inline MethodTable::VtableIndirectionSlotIterator MethodTable::IterateVtableIndirectionSlotsFrom(DWORD index)
-{
-    WRAPPER_NO_CONTRACT;
-    return VtableIndirectionSlotIterator(this, index);
-}
 
 #ifndef DACCESS_COMPILE
 #ifdef FEATURE_COMINTEROP

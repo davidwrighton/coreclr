@@ -9431,7 +9431,8 @@ void Module::PlaceType(DataImage *image, TypeHandle th, DWORD profilingFlags)
             MethodTable::VtableIndirectionSlotIterator it = pMT->IterateVtableIndirectionSlots();
             while (it.Next())
             {
-                image->PlaceInternedStructureForAddress(it.GetIndirectionSlot(), CORCOMPILE_SECTION_READONLY_SHARED_HOT, CORCOMPILE_SECTION_READONLY_HOT);
+                if (it.GetNumSlots() != 0)
+                    image->PlaceInternedStructureForAddress(it.GetIndirectionSlot(), CORCOMPILE_SECTION_READONLY_SHARED_HOT, CORCOMPILE_SECTION_READONLY_HOT);
             }
 
             image->PlaceStructureForAddress(pMT->GetWriteableData(), CORCOMPILE_SECTION_HOT);

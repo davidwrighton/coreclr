@@ -7185,16 +7185,25 @@ NativeImageDumper::DumpMethodTable( PTR_MethodTable mt, const char * name,
             DisplayStartList( W("[%-4s]: %s (%s)"), ALWAYS );
             for( unsigned i = 0; i < mt->GetNumVtableIndirections(); ++i )
             {
-                DisplayStartElement( "Slot", ALWAYS );
-                DisplayWriteElementInt( "Index", i, ALWAYS );
                 TADDR base = dac_cast<TADDR>(&(mt->GetVtableIndirections()[i]));
-                DPTR(MethodTable::VTableIndir2_t) tgt = MethodTable::VTableIndir_t::GetValueMaybeNullAtPtr(base);
-                DisplayWriteElementPointer( "Pointer",
-                                            DataPtrToDisplay(dac_cast<TADDR>(tgt)),
+
+                bool isVTableIndirectionSingleLevelVTableCell = MethodTable::GetStartSlotForVtableIndirection(i, mt->GetNumVirtuals()) == MethodTable::GetEndSlotForVtableIndirection(i, mt->GetNumVirtuals());
+                if (isVTableIndirectionSingleLevelVTableCell)
+                {
+                    DumpSlot(i, base);
+                }
+                else
+                {
+                    DisplayStartElement( "Slot", ALWAYS );
+                    DisplayWriteElementInt( "Index", i, ALWAYS );
+                    DPTR(MethodTable::VTableIndir2_t) tgt = MethodTable::VTableIndir_t::GetValueMaybeNullAtPtr(base);
+                    DisplayWriteElementPointer( "Pointer",
+                                                DataPtrToDisplay(dac_cast<TADDR>(tgt)),
+                                                ALWAYS );
+                    DisplayWriteElementString( "Type", "chunk indirection",
                                             ALWAYS );
-                DisplayWriteElementString( "Type", "chunk indirection",
-                                           ALWAYS );
-                DisplayEndElement( ALWAYS ); //Slot
+                    DisplayEndElement( ALWAYS ); //Slot
+                }
             }
 
             if (mt->HasNonVirtualSlotsArray())

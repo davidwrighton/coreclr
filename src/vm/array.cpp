@@ -534,6 +534,10 @@ MethodTable* Module::CreateArrayMethodTable(TypeHandle elemTypeHnd, CorElementTy
                 // Share the parent chunk
                 it.SetIndirectionSlot(pParentClass->GetVtableIndirections()[it.GetIndex()].GetValueMaybeNull());
             }
+            else if (it.GetNumSlots() == 0)
+            {
+                // This is a single level vtable cell, it will be set by the GetSlot logic
+            }
             else 
             {
                 // Use the locally allocated chunk

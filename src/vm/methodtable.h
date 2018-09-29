@@ -1562,8 +1562,15 @@ public:
 
         DWORD index = GetIndexOfVtableIndirection(slotNum);
         TADDR base = dac_cast<TADDR>(&(GetVtableIndirections()[index]));
-        DPTR(VTableIndir2_t) baseAfterInd = VTableIndir_t::GetValueMaybeNullAtPtr(base) + GetIndexAfterVtableIndirection(slotNum);
-        return VTableIndir2_t::GetValueMaybeNullAtPtr(dac_cast<TADDR>(baseAfterInd));
+        if (DoesSlotUtilizeVtableIndirection(slotNum))
+        {
+            DPTR(VTableIndir2_t) baseAfterInd = VTableIndir_t::GetValueMaybeNullAtPtr(base) + GetIndexAfterVtableIndirection(slotNum);
+            return VTableIndir2_t::GetValueMaybeNullAtPtr(dac_cast<TADDR>(baseAfterInd));
+        }
+        else
+        {
+            return VTableIndir2_t::GetValueMaybeNullAtPtr(base);
+        }
     }
 
     TADDR GetSlotPtrRaw(UINT32 slotNum)
@@ -1577,8 +1584,15 @@ public:
             // Virtual slots live in chunks pointed to by vtable indirections
             DWORD index = GetIndexOfVtableIndirection(slotNum);
             TADDR base = dac_cast<TADDR>(&(GetVtableIndirections()[index]));
-            DPTR(VTableIndir2_t) baseAfterInd = VTableIndir_t::GetValueMaybeNullAtPtr(base) + GetIndexAfterVtableIndirection(slotNum);
-            return dac_cast<TADDR>(baseAfterInd);
+            if (DoesSlotUtilizeVtableIndirection(slotNum))
+            {
+                DPTR(VTableIndir2_t) baseAfterInd = VTableIndir_t::GetValueMaybeNullAtPtr(base) + GetIndexAfterVtableIndirection(slotNum);
+                return dac_cast<TADDR>(baseAfterInd);
+            }
+            else
+            {
+                return dac_cast<TADDR>(base);
+            }
         }
         else if (HasSingleNonVirtualSlot())
         {
@@ -1644,23 +1658,31 @@ public:
     // The current chunking strategy is independent of class properties; all are of size 8.  Several 
     // other strategies were tried, and the only one that has performed better empirically is to begin 
     // with a single chunk of size 4 (matching the number of virtuals in System.Object) and then
-    // continue with chunks of size 8.  However it was a small improvement and required the run-time 
-    // helpers listed below to be measurably slower.
+    // continue with chunks of size 8.  However it was a small improvement and required various run-time 
+    // helpers to be measurably slower. Those helpers are no longer affected by vtable layout, but analysis
+    // has not been done since that work on a better approach.
     //
-    // If you want to change this, you should only need to modify the first four functions below
-    // along with any assembly helper that has taken a dependency on the layout.  Currently,
-    // those consist of:
-    //     JIT_IsInstanceOfInterface
-    //     JIT_ChkCastInterface
-    //     Transparent proxy stub
+    // If you want to change this, you should only need to modify the first four functions below.
     //
     // This layout only applies to the virtual methods in a class (those with slot number below GetNumVirtuals).
     // Non-virtual methods that are in the vtable (those with slot numbers between GetNumVirtuals and
     // GetNumVtableSlots) are laid out in a single chunk pointed to by an optional member.
     // See GetSlotPtrRaw for more details.
-
+#if defined(FEATURE_NGEN_RELOCS_OPTIMIZATIONS)
     #define VTABLE_SLOTS_PER_CHUNK 8
     #define VTABLE_SLOTS_PER_CHUNK_LOG2 3
+    #define TWO_LEVEL_VTABLES
+#else
+//    #define SINGLE_LEVEL_VTABLES
+    #define HYBRID_LEVEL_VTABLES 
+#endif
+
+#if defined(HYBRID_LEVEL_VTABLES)
+    #define VTABLE_INITIAL_CHUNK_SIZE 4
+    #define VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES 12
+    #define VTABLE_SLOTS_PER_CHUNK 8
+    #define VTABLE_SLOTS_PER_CHUNK_LOG2 3
+#endif
 
 #if defined(FEATURE_NGEN_RELOCS_OPTIMIZATIONS)
     typedef RelativePointer<PCODE> VTableIndir2_t;
@@ -1675,6 +1697,8 @@ public:
     static DWORD GetEndSlotForVtableIndirection(UINT32 indirectionIndex, DWORD wNumVirtuals);
     static UINT32 GetIndexAfterVtableIndirection(UINT32 slotNum);
     static DWORD GetNumVtableIndirections(DWORD wNumVirtuals);
+    static BOOL DoesSlotUtilizeVtableIndirection(DWORD slotNum);
+
     DPTR(VTableIndir_t) GetVtableIndirections();
     DWORD GetNumVtableIndirections();
 
@@ -1709,7 +1733,6 @@ public:
     };  // class VtableIndirectionSlotIterator
 
     VtableIndirectionSlotIterator IterateVtableIndirectionSlots();
-    VtableIndirectionSlotIterator IterateVtableIndirectionSlotsFrom(DWORD index);
 
 #ifdef FEATURE_PREJIT
     static BOOL CanShareVtableChunksFrom(MethodTable *pTargetMT, Module *pCurrentLoaderModule, Module *pCurrentPreferredZapModule);

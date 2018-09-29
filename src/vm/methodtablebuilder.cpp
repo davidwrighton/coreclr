@@ -8872,22 +8872,25 @@ void MethodTableBuilder::CopyExactParentSlots(MethodTable *pMT, MethodTable *pAp
 
             // We need to re-inherit this slot from the exact parent.
 
-            DWORD indirectionIndex = MethodTable::GetIndexOfVtableIndirection(i);
-            if (pMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull() == pApproxParentMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull())
+            if (MethodTable::DoesSlotUtilizeVtableIndirection(i))
             {
-                // The slot lives in a chunk shared from the approximate parent MT
-                // If so, we need to change to share the chunk from the exact parent MT
+                DWORD indirectionIndex = MethodTable::GetIndexOfVtableIndirection(i);
+                if (pMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull() == pApproxParentMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull())
+                {
+                    // The slot lives in a chunk shared from the approximate parent MT
+                    // If so, we need to change to share the chunk from the exact parent MT
 
 #ifdef FEATURE_PREJIT
-                _ASSERTE(MethodTable::CanShareVtableChunksFrom(pParentMT, pMT->GetLoaderModule(), Module::GetPreferredZapModuleForMethodTable(pMT)));
+                    _ASSERTE(MethodTable::CanShareVtableChunksFrom(pParentMT, pMT->GetLoaderModule(), Module::GetPreferredZapModuleForMethodTable(pMT)));
 #else
-                _ASSERTE(MethodTable::CanShareVtableChunksFrom(pParentMT, pMT->GetLoaderModule()));
+                    _ASSERTE(MethodTable::CanShareVtableChunksFrom(pParentMT, pMT->GetLoaderModule()));
 #endif
 
-                pMT->GetVtableIndirections()[indirectionIndex].SetValueMaybeNull(pParentMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull());
+                    pMT->GetVtableIndirections()[indirectionIndex].SetValueMaybeNull(pParentMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull());
 
-                i = MethodTable::GetEndSlotForVtableIndirection(indirectionIndex, nParentVirtuals) - 1;
-                continue;
+                    i = MethodTable::GetEndSlotForVtableIndirection(indirectionIndex, nParentVirtuals) - 1;
+                    continue;
+                }
             }
 
             // The slot lives in an unshared chunk. We need to update the slot contents
@@ -9898,7 +9901,7 @@ MethodTable * MethodTableBuilder::AllocateNewMT(Module *pLoaderModule,
     // For the rest, we need to allocate space
     for (DWORD i = 0; i < dwVirtuals; i++)
     {
-        if (!canShareVtableChunks || ChangesImplementationOfVirtualSlot(static_cast<SLOT_INDEX>(i)))
+        if (MethodTable::DoesSlotUtilizeVtableIndirection(i) && (!canShareVtableChunks || ChangesImplementationOfVirtualSlot(static_cast<SLOT_INDEX>(i))))
         {
             DWORD chunkStart = MethodTable::GetStartSlotForVtableIndirection(MethodTable::GetIndexOfVtableIndirection(i), dwVirtuals);
             DWORD chunkEnd = MethodTable::GetEndSlotForVtableIndirection(MethodTable::GetIndexOfVtableIndirection(i), dwVirtuals);
@@ -10526,7 +10529,7 @@ MethodTableBuilder::SetupMethodTable2(
 
             CONSISTENCY_CHECK(CheckPointer(pMD));
 
-            if (pMD->GetMethodTable() != pMT)
+            if ((pMD->GetMethodTable() != pMT) && MethodTable::DoesSlotUtilizeVtableIndirection(iCurSlot))
             {
                 //
                 // Inherited slots

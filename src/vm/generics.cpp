@@ -443,6 +443,10 @@ ClassLoader::CreateTypeHandleForNonCanonicalGenericInstantiation(
             // Share the canonical chunk
             it.SetIndirectionSlot(pOldMT->GetVtableIndirections()[it.GetIndex()].GetValueMaybeNull());
         }
+        else if (it.GetNumSlots() == 0)
+        {
+            // This will be handled in the SetSlot code below
+        }
         else
         {
             // Use the locally allocated chunk

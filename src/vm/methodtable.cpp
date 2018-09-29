@@ -4292,7 +4292,11 @@ void MethodTable::Save(DataImage *image, DWORD profilingFlags)
     VtableIndirectionSlotIterator it = IterateVtableIndirectionSlots();
     while (it.Next())
     {
-        if (!image->IsStored(it.GetIndirectionSlot()))
+        if (it.GetNumSlots() == 0)
+        {
+            // This doesn't point at a structure. Instead it points at code.
+        }
+        else if (!image->IsStored(it.GetIndirectionSlot()))
         {
             if (!MethodTable::VTableIndir2_t::isRelative
                 && CanInternVtableChunk(image, it))
@@ -4958,7 +4962,11 @@ void MethodTable::Fixup(DataImage *image)
         VtableIndirectionSlotIterator it = IterateVtableIndirectionSlots();
         while (it.Next())
         {
-            if (VTableIndir_t::isRelative)
+            if (it.GetNumSlots() == 0)
+            {
+                // This is a single level vtable entry. The VTable slot resolution code below is what fixes these up.
+            }
+            else if (VTableIndir_t::isRelative)
             {
                 image->FixupRelativePointerField(this, it.GetOffsetFromMethodTable());
             }
@@ -4984,10 +4992,19 @@ void MethodTable::Fixup(DataImage *image)
 
         if (slotNumber < GetNumVirtuals())
         {
-            // Virtual slots live in chunks pointed to by vtable indirections
+            if (DoesSlotUtilizeVtableIndirection(slotNumber))
+            {
+                // Virtual slots live in chunks pointed to by vtable indirections
 
-            slotBase = (PVOID) GetVtableIndirections()[GetIndexOfVtableIndirection(slotNumber)].GetValueMaybeNull();
-            slotOffset = GetIndexAfterVtableIndirection(slotNumber) * sizeof(MethodTable::VTableIndir2_t);
+                slotBase = (PVOID) GetVtableIndirections()[GetIndexOfVtableIndirection(slotNumber)].GetValueMaybeNull();
+                slotOffset = GetIndexAfterVtableIndirection(slotNumber) * sizeof(MethodTable::VTableIndir2_t);
+            }
+            else
+            {
+                // Single level vtable indirection
+                slotBase = (PVOID) this;
+                slotOffset = (BYTE *)GetSlotPtr(slotNumber) - (BYTE *)this;
+            }
         }
         else if (HasSingleNonVirtualSlot())
         {
@@ -9723,7 +9740,7 @@ void MethodTable::SetSlot(UINT32 slotNumber, PCODE slotCode)
     } CONTRACTL_END;
 
 #ifdef _DEBUG
-    if (slotNumber < GetNumVirtuals())
+    if (slotNumber < GetNumVirtuals() && !DoesSlotUtilizeVtableIndirection(slotNumber))
     {
         //
         // Verify that slots in shared vtable chunks not owned by this methodtable are only ever patched to stable entrypoint.

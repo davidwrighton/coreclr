@@ -8768,8 +8768,18 @@ void CEEInfo::getMethodVTableOffset (CORINFO_METHOD_HANDLE methodHnd,
     // better be in the vtable
     _ASSERTE(method->GetSlot() < method->GetMethodTable()->GetNumVirtuals());
 
-    *pOffsetOfIndirection = MethodTable::GetVtableOffset() + MethodTable::GetIndexOfVtableIndirection(method->GetSlot()) * sizeof(MethodTable::VTableIndir_t);
-    *pOffsetAfterIndirection = MethodTable::GetIndexAfterVtableIndirection(method->GetSlot()) * sizeof(MethodTable::VTableIndir2_t);
+    unsigned offsetFromMethodTableStartOfVirtualSlot = MethodTable::GetVtableOffset() + MethodTable::GetIndexOfVtableIndirection(method->GetSlot()) * sizeof(MethodTable::VTableIndir_t);
+    if (MethodTable::DoesSlotUtilizeVtableIndirection(method->GetSlot()))
+    {
+        *pOffsetOfIndirection = offsetFromMethodTableStartOfVirtualSlot;
+        *pOffsetAfterIndirection = MethodTable::GetIndexAfterVtableIndirection(method->GetSlot()) * sizeof(MethodTable::VTableIndir2_t);
+    }
+    else
+    {
+        *pOffsetOfIndirection = CORINFO_VIRTUALCALL_NO_CHUNK;
+        *pOffsetAfterIndirection = offsetFromMethodTableStartOfVirtualSlot;
+    }
+
     *isRelative = MethodTable::VTableIndir_t::isRelative ? 1 : 0;
     _ASSERTE(MethodTable::VTableIndir_t::isRelative == MethodTable::VTableIndir2_t::isRelative);
 
