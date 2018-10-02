@@ -9740,7 +9740,7 @@ void MethodTable::SetSlot(UINT32 slotNumber, PCODE slotCode)
     } CONTRACTL_END;
 
 #ifdef _DEBUG
-    if (slotNumber < GetNumVirtuals() && !DoesSlotUtilizeVtableIndirection(slotNumber))
+    if (slotNumber < GetNumVirtuals() && DoesSlotUtilizeVtableIndirection(slotNumber))
     {
         //
         // Verify that slots in shared vtable chunks not owned by this methodtable are only ever patched to stable entrypoint.

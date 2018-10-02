@@ -994,7 +994,7 @@ inline DWORD MethodTable::GetEndSlotForVtableIndirection(UINT32 indirectionIndex
 
     if ((indirectionIndex == 0) && initialChunkSizeSpace)
     {
-        end = VTABLE_INITIAL_CHUNK_SIZE - 1;
+        end = VTABLE_INITIAL_CHUNK_SIZE;
     }
     else if (indirectionIndex < (VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES + initialChunkSizeSpace))
     {

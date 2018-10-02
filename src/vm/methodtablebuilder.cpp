@@ -9968,6 +9968,10 @@ MethodTable * MethodTableBuilder::AllocateNewMT(Module *pLoaderModule,
         // Recalculate whether we will share this chunk
         if (canShareVtableChunks)
         {
+            // If the chunk has not indirect slots in it, it must be a direct slot, and therefore unshared
+            if (it.GetNumSlots() == 0)
+                shared = false;
+
             for (DWORD i = it.GetStartSlot(); i < it.GetEndSlot(); i++)
             {
                 if (ChangesImplementationOfVirtualSlot(static_cast<SLOT_INDEX>(i)))
@@ -10529,7 +10533,7 @@ MethodTableBuilder::SetupMethodTable2(
 
             CONSISTENCY_CHECK(CheckPointer(pMD));
 
-            if ((pMD->GetMethodTable() != pMT) && MethodTable::DoesSlotUtilizeVtableIndirection(iCurSlot))
+            if (pMD->GetMethodTable() != pMT)
             {
                 //
                 // Inherited slots
@@ -10537,8 +10541,15 @@ MethodTableBuilder::SetupMethodTable2(
                 // Do not write into vtable chunks shared with parent. It would introduce race 
                 // with code:MethodDesc::SetStableEntryPointInterlocked.
                 //
-                DWORD indirectionIndex = MethodTable::GetIndexOfVtableIndirection(iCurSlot);
-                if (GetParentMethodTable()->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull() != pMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull())
+                bool thisMTOwnsVTableEntry = !MethodTable::DoesSlotUtilizeVtableIndirection(iCurSlot);
+                if (!thisMTOwnsVTableEntry)
+                {
+                    DWORD indirectionIndex = MethodTable::GetIndexOfVtableIndirection(iCurSlot);
+                    if (GetParentMethodTable()->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull() != pMT->GetVtableIndirections()[indirectionIndex].GetValueMaybeNull())
+                        thisMTOwnsVTableEntry = true;
+                }
+
+                if (thisMTOwnsVTableEntry)
                     pMT->SetSlot(iCurSlot, pMD->GetMethodEntryPoint());
             }
             else
