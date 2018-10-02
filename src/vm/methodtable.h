@@ -1685,8 +1685,8 @@ public:
     #define VTABLE_SLOTS_PER_CHUNK_LOG2 3
     #define TWO_LEVEL_VTABLES
 #else
-    #define SINGLE_LEVEL_VTABLES
-//    #define HYBRID_LEVEL_VTABLES 
+//    #define SINGLE_LEVEL_VTABLES
+    #define HYBRID_LEVEL_VTABLES 
 #endif
 
 #if defined(HYBRID_LEVEL_VTABLES)
