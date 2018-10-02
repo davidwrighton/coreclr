@@ -224,12 +224,6 @@ ASMCONSTANTS_C_ASSERT(OFFSETOF__MethodTable__m_pInterfaceMap
                     == offsetof(MethodTable, m_pMultipurposeSlot2));
 
 
-#define MethodTable_VtableSlotsPerChunk     8
-ASMCONSTANTS_C_ASSERT(MethodTable_VtableSlotsPerChunk == VTABLE_SLOTS_PER_CHUNK)
-
-#define MethodTable_VtableSlotsPerChunkLog2 3
-ASMCONSTANTS_C_ASSERT(MethodTable_VtableSlotsPerChunkLog2 == VTABLE_SLOTS_PER_CHUNK_LOG2)
-
 #if defined(FEATURE_TYPEEQUIVALENCE)
 #define               METHODTABLE_EQUIVALENCE_FLAGS 0x02000000
 ASMCONSTANTS_C_ASSERT(METHODTABLE_EQUIVALENCE_FLAGS

@@ -1655,14 +1655,26 @@ public:
     //
     // We refer to "ptr to chunk 1" and "ptr to chunk 2" as "indirection slots."
     // 
-    // The current chunking strategy is independent of class properties; all are of size 8.  Several 
-    // other strategies were tried, and the only one that has performed better empirically is to begin 
+    // There are 3 implemented chunking strategies
+    // SINGLE_LEVEL_VTABLES
+    // - All vtable entries are stored in the vtable directly
+    //
+    // HYBRID_LEVEL_VTABLES
+    // - There is a chunk of vtable entries stored as a chunk(VTABLE_INITIAL_CHUNK_SIZE, currently set to 4)
+    // - There are some single level vtable entries (VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES, currently set to 28)
+    // - Remaining entries are stored in two level vtables where there are 8 slots per chunk
+    //
+    // TWO_LEVEL_VTABLES
+    // - All entries are stored in two level vtables where there are 8 slots per chunk
+    // 
+    // The CLR has used in the past a  chunking strategy is independent of class properties; all are of size 8.
+    // Several other strategies were tried, and the only one that has performed better empirically is to begin 
     // with a single chunk of size 4 (matching the number of virtuals in System.Object) and then
     // continue with chunks of size 8.  However it was a small improvement and required various run-time 
     // helpers to be measurably slower. Those helpers are no longer affected by vtable layout, but analysis
     // has not been done since that work on a better approach.
     //
-    // If you want to change this, you should only need to modify the first four functions below.
+    // If you want to change this, you should only need to modify the first six functions below.
     //
     // This layout only applies to the virtual methods in a class (those with slot number below GetNumVirtuals).
     // Non-virtual methods that are in the vtable (those with slot numbers between GetNumVirtuals and
@@ -1673,13 +1685,13 @@ public:
     #define VTABLE_SLOTS_PER_CHUNK_LOG2 3
     #define TWO_LEVEL_VTABLES
 #else
-//    #define SINGLE_LEVEL_VTABLES
-    #define HYBRID_LEVEL_VTABLES 
+    #define SINGLE_LEVEL_VTABLES
+//    #define HYBRID_LEVEL_VTABLES 
 #endif
 
 #if defined(HYBRID_LEVEL_VTABLES)
     #define VTABLE_INITIAL_CHUNK_SIZE 4
-    #define VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES 12
+    #define VTABLE_COUNT_OF_SINGLE_LEVEL_ENTRIES 28
     #define VTABLE_SLOTS_PER_CHUNK 8
     #define VTABLE_SLOTS_PER_CHUNK_LOG2 3
 #endif
