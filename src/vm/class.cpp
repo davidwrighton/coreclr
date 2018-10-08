@@ -893,6 +893,8 @@ ClassLoader::LoadExactParentAndInterfacesTransitively(MethodTable *pMT)
     if (pParentMT != NULL)
     {
         EnsureLoaded(pParentMT, CLASS_LOAD_EXACTPARENTS);
+
+        pParentMT->DeclareDerivedType(pMT);
     }
 
 
@@ -919,6 +921,7 @@ ClassLoader::LoadExactParentAndInterfacesTransitively(MethodTable *pMT)
         while (it.Next())
         {
             Module::RestoreMethodTablePointer(&it.GetInterfaceInfo()->m_pMethodTable, pMT->GetLoaderModule(), CLASS_LOAD_EXACTPARENTS);
+            it.GetInterfaceInfo()->GetMethodTable()->DeclareDerivedType(pMT);
         }
     }
     else

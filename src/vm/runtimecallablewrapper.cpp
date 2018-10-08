@@ -4867,6 +4867,11 @@ BOOL ComObject::SupportsInterface(OBJECTREF oref, MethodTable* pIntfTable)
         }
 
         RCWPROTECT_END(pRCW);
+
+        if (!pIntfTable->HasDynamicCastToTypeBeenPerformed())
+        {
+            pIntfTable->NotifyInterfaceUsedViaDynamicCastBehavior();
+        }
     }
     
     GCPROTECT_END();

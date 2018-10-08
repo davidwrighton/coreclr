@@ -1254,6 +1254,13 @@ void Assembly::PrepareModuleForAssembly(Module* module, AllocMemTracker *pamTrac
         m_pClassLoader->PopulateAvailableClassHashTable(module, pamTracker);
     }
 
+#ifdef FEATURE_PREJIT
+    if (module->HasNativeImage() && !IsSystem())
+    {
+        GCX_COOP();
+        LoaderAllocator::DisableDyanmicTypeKnowledgeOptimizations();
+    }
+#endif // FEATURE_PREJIT
 
 #ifdef DEBUGGING_SUPPORTED
     // Modules take the DebuggerAssemblyControlFlags down from its

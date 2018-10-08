@@ -8985,6 +8985,50 @@ CORINFO_METHOD_HANDLE CEEInfo::getUnboxedEntry(
 }
 
 /*********************************************************************/
+CORINFO_CLASS_HANDLE CEEInfo::getUniqueImplementingClass(CORINFO_CLASS_HANDLE interfaceClsHnd)
+{
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+    } CONTRACTL_END;
+
+    CORINFO_CLASS_HANDLE result = nullptr;
+
+    JIT_TO_EE_TRANSITION();
+
+    TypeHandle iHnd(interfaceClsHnd);
+
+    if (iHnd.IsInterface())
+    {
+        MethodTable* iMT = iHnd.GetMethodTable();
+        MethodTable* uniqueMT = iMT->GetLoaderAllocator()->FindUniqueConcreteTypeWhichImplementsThisInterface(iMT, NULL);
+        result = (CORINFO_CLASS_HANDLE) uniqueMT;
+    }
+
+    EE_TO_JIT_TRANSITION();
+
+    return result;
+}
+
+bool CEEInfo::isThereAnyOverride(CORINFO_CLASS_HANDLE classHnd, CORINFO_METHOD_HANDLE methHnd)
+{
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+    } CONTRACTL_END;
+
+    bool result = false;
+
+    JIT_TO_EE_TRANSITION();
+
+    EE_TO_JIT_TRANSITION();
+
+    return result;
+}
+
+/*********************************************************************/
 void CEEInfo::expandRawHandleIntrinsic(
     CORINFO_RESOLVED_TOKEN *        pResolvedToken,
     CORINFO_GENERICHANDLE_RESULT *  pResult)

@@ -373,8 +373,19 @@ ClassLoader::CreateTypeHandleForNonCanonicalGenericInstantiation(
     }
 #endif // FEATURE_TYPEEQUIVALENCE
 
+    if (pOldMT->IsInterface() && pOldMT->HasVariance())
+    {
+        // Variant interfaces may be implemented by types which don't directly implement the interface
+        // So treat them as always being multiply implemented.
+        pMTWriteableData->SetHasMultipleDerivedTypes();
+    }
+
     if (pOldMT->IsInterface() && IsImplicitInterfaceOfSZArray(pOldMT))
     {
+        // Implicit interfaces are implemented by arrays and types. As we don't track these implicit interface
+        // implementations eagerly during type loading, we need to mark that the interface type is multiply implemented.
+        pMTWriteableData->SetHasMultipleDerivedTypes();
+
         // Determine if we are creating an interface methodtable that may be used to dispatch through VSD
         // on an array object using a generic interface (such as IList<T>).
         // Please read comments in IsArray block of code:MethodTable::FindDispatchImpl. 

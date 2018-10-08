@@ -384,6 +384,10 @@ Crst LoaderAllocatorReferences
     AcquiredAfter PendingTypeLoadEntry InstMethodHashTable
 End
 
+Crst ActiveLoaderAllocators
+    AcquiredBefore LoaderAllocator
+End
+
 Crst AssemblyList
     AcquiredAfter LoaderAllocatorReferences ThreadStore AssemblyLoader
 End

@@ -2524,6 +2524,13 @@ void SystemDomain::LoadBaseSystemClasses()
 
     g_TypedReferenceMT = MscorlibBinder::GetClass(CLASS__TYPED_REFERENCE);
 
+    // used by IsImplicitInterfaceOfSZArray
+    MscorlibBinder::GetClass(CLASS__IENUMERABLEGENERIC);
+    MscorlibBinder::GetClass(CLASS__ICOLLECTIONGENERIC);
+    MscorlibBinder::GetClass(CLASS__ILISTGENERIC);
+    MscorlibBinder::GetClass(CLASS__IREADONLYCOLLECTIONGENERIC);
+    MscorlibBinder::GetClass(CLASS__IREADONLYLISTGENERIC);
+
     // Make sure all primitive types are loaded
     for (int et = ELEMENT_TYPE_VOID; et <= ELEMENT_TYPE_R8; et++)
         MscorlibBinder::LoadPrimitiveType((CorElementType)et);
@@ -2539,13 +2546,6 @@ void SystemDomain::LoadBaseSystemClasses()
     // guaranteed to be found.
     g_pDelegateClass = MscorlibBinder::GetClass(CLASS__DELEGATE);
     g_pMulticastDelegateClass = MscorlibBinder::GetClass(CLASS__MULTICAST_DELEGATE);
-
-    // used by IsImplicitInterfaceOfSZArray
-    MscorlibBinder::GetClass(CLASS__IENUMERABLEGENERIC);
-    MscorlibBinder::GetClass(CLASS__ICOLLECTIONGENERIC);
-    MscorlibBinder::GetClass(CLASS__ILISTGENERIC);
-    MscorlibBinder::GetClass(CLASS__IREADONLYCOLLECTIONGENERIC);
-    MscorlibBinder::GetClass(CLASS__IREADONLYLISTGENERIC);
 
     // Load String
     g_pStringClass = MscorlibBinder::LoadPrimitiveType(ELEMENT_TYPE_STRING);
