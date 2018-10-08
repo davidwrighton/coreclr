@@ -9264,6 +9264,8 @@ MethodTableBuilder::LoadExactInterfaceMap(MethodTable *pMT)
         CONSISTENCY_CHECK(pOldMT->HasSameTypeDefAs(pNewMT));
 #endif // _DEBUG
         thisIt.SetInterface(pExactMTs[i]);
+        pExactMTs[i]->DeclareDerivedType(pMT);
+
         i++;
     }
 
