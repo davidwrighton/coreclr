@@ -1850,6 +1850,13 @@ MethodTableBuilder::BuildMethodTableThrowing(
     if (bmtGenerics->pVarianceInfo != NULL)
     {
         pMT->SetHasVariance();
+
+        if (pMT->IsInterface())
+        {
+            // Since variance is discovered at execution time, identifying single implementations of an interface method isn't practical
+            // So mark the interface as multiply implemented.
+            pMT->GetWriteableDataForWrite()->SetHasMultipleDerivedTypes();
+        }
     }
 
     if (bmtFP->NumRegularStaticGCBoxedFields != 0)
@@ -8906,7 +8913,10 @@ MethodTableBuilder::LoadExactInterfaceMap(MethodTable *pMT)
         if (it.GetInterface()->HasInstantiation())
         {
             hasInstantiatedInterfaces = TRUE;
-            break;
+        }
+        else
+        {
+            it.GetInterface()->DeclareDerivedType(pMT);
         }
     }
 
@@ -9270,6 +9280,8 @@ MethodTableBuilder::LoadExactInterfaceMap(MethodTable *pMT)
         CONSISTENCY_CHECK(pOldMT->HasSameTypeDefAs(pNewMT));
 #endif // _DEBUG
         thisIt.SetInterface(pExactMTs[i]);
+        pExactMTs[i]->DeclareDerivedType(pMT);
+
         i++;
     }
 
@@ -10236,6 +10248,13 @@ MethodTableBuilder::SetupMethodTable2(
         pMT->SetRequiresFatDispatchTokens();
     }
 #endif // FEATURE_COMINTEROP
+
+    if (IsInterface() && !bmtGenerics->IsTypicalTypeDefinition() && !bmtGenerics->fContainsGenericVariables && IsImplicitInterfaceOfSZArray(pMT))
+    {
+        // Implicit interfaces are implemented by arrays and regular types. As we don't track these implicit interface
+        // implementations eagerly during type loading, we need to mark that the interface type is multiply implemented.
+        pMT->GetWriteableDataForWrite()->SetHasMultipleDerivedTypes();
+    }
 
     if (bmtVT->pCCtor != NULL)
     {

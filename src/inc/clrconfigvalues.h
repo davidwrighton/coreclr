@@ -679,6 +679,8 @@ RETAIL_CONFIG_DWORD_INFO_EX(EXTERNAL_VirtualCallStubLogging, W("VirtualCallStubL
 CONFIG_DWORD_INFO_EX(INTERNAL_VirtualCallStubMissCount, W("VirtualCallStubMissCount"), 100, "Used only when STUB_LOGGING is defined, which by default is not.", CLRConfig::REGUTIL_default)
 CONFIG_DWORD_INFO_EX(INTERNAL_VirtualCallStubResetCacheCounter, W("VirtualCallStubResetCacheCounter"), 0, "Used only when STUB_LOGGING is defined, which by default is not.", CLRConfig::REGUTIL_default)
 CONFIG_DWORD_INFO_EX(INTERNAL_VirtualCallStubResetCacheIncr, W("VirtualCallStubResetCacheIncr"), 0, "Used only when STUB_LOGGING is defined, which by default is not.", CLRConfig::REGUTIL_default)
+RETAIL_CONFIG_DWORD_INFO(UNSUPPORTED_VirtualCallStub_ExactDispatch, W("VirtualCallStub_ExactDispatch"), 1, "Indicates whether or not to call the target function directly instead of passing through a monomorphic stub when possible.")
+
 
 ///
 /// Watson

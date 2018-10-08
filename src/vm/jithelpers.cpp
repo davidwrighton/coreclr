@@ -2375,6 +2375,13 @@ BOOL ObjIsInstanceOf(Object *pObject, TypeHandle toTypeHnd, BOOL throwCastExcept
         {
             RealCOMPlusThrow(exception);
         }
+        if (fCast)
+        {
+            if (!toTypeHnd.GetMethodTable()->HasDynamicCastToTypeBeenPerformed())
+            {
+                toTypeHnd.GetMethodTable()->NotifyInterfaceUsedViaDynamicCastBehavior();
+            }
+        }
         GCPROTECT_END(); //exception
     }
 #endif // FEATURE_ICASTABLE

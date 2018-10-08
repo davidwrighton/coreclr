@@ -26,12 +26,15 @@
 
 #ifndef DACCESS_COMPILE 
 
+static ConfigDWORD s_VirtualCallStub_ExactDispatch;
+
 //@TODO: make these conditional on whether logs are being produced
 //instrumentation counters
 UINT32 g_site_counter = 0;              //# of call sites
 UINT32 g_site_write = 0;                //# of call site backpatch writes
 UINT32 g_site_write_poly = 0;           //# of call site backpatch writes to point to resolve stubs
 UINT32 g_site_write_mono = 0;           //# of call site backpatch writes to point to dispatch stubs
+UINT32 g_site_write_direct = 0;         //# of call site backpatch writes to point directly to target
 
 UINT32 g_stub_lookup_counter = 0;       //# of lookup stubs
 UINT32 g_stub_mono_counter = 0;         //# of dispatch stubs
@@ -121,6 +124,31 @@ UINT32 g_dumpLogIncr;
 
 //@TODO: use the existing logging mechanisms.  for now we write to a file.
 HANDLE g_hStubLogFile;
+
+bool IsInterfaceDirectCallableGivenCallAttempt(MethodTable *pInterfaceMTToDispatchTo)
+{
+    _ASSERTE(pInterfaceMTToDispatchTo->HasDerivedType() || 
+            pInterfaceMTToDispatchTo->HasMultipleDerivedTypes());
+    return !pInterfaceMTToDispatchTo->HasMultipleDerivedTypes();
+}
+
+MethodTable *TokenToDevirtualizableMethodTable(DispatchToken token)
+{
+    if (token.IsTypedToken() && s_VirtualCallStub_ExactDispatch.val(CLRConfig::UNSUPPORTED_VirtualCallStub_ExactDispatch))
+    {
+        MethodTable *pMTToken = GetThread()->GetDomain()->LookupType(token.GetTypeID());
+        if (pMTToken->IsInterface())
+        {
+            return pMTToken;
+        }
+        else
+            return NULL;
+    }
+    else
+    {
+        return NULL;
+    }
+}
 
 void VirtualCallStubManager::StartupLogging()
 {
@@ -224,6 +252,8 @@ void VirtualCallStubManager::LoggingDump()
         sprintf_s(szPrintStr, COUNTOF(szPrintStr), OUTPUT_FORMAT_INT, "site_write", g_site_write);
         WriteFile (g_hStubLogFile, szPrintStr, (DWORD) strlen(szPrintStr), &dwWriteByte, NULL);
         sprintf_s(szPrintStr, COUNTOF(szPrintStr), OUTPUT_FORMAT_INT, "site_write_mono", g_site_write_mono);
+        WriteFile (g_hStubLogFile, szPrintStr, (DWORD) strlen(szPrintStr), &dwWriteByte, NULL);
+        sprintf_s(szPrintStr, COUNTOF(szPrintStr), OUTPUT_FORMAT_INT, "site_write_direct", g_site_write_direct);
         WriteFile (g_hStubLogFile, szPrintStr, (DWORD) strlen(szPrintStr), &dwWriteByte, NULL);
         sprintf_s(szPrintStr, COUNTOF(szPrintStr), OUTPUT_FORMAT_INT, "site_write_poly", g_site_write_poly);
         WriteFile (g_hStubLogFile, szPrintStr, (DWORD) strlen(szPrintStr), &dwWriteByte, NULL);
@@ -1698,17 +1728,22 @@ PCODE VSD_ResolveWorker(TransitionBlock * pTransitionBlock,
 
     VirtualCallStubManager::StubKind stubKind = VirtualCallStubManager::SK_UNKNOWN;
     VirtualCallStubManager *pMgr = VirtualCallStubManager::FindStubManager(callSiteTarget, &stubKind);
-    PREFIX_ASSUME(pMgr != NULL);
-
-#ifndef _TARGET_X86_ 
-    // Have we failed the dispatch stub too many times?
-    if (flags & SDF_ResolveBackPatch)
+    if (pMgr == nullptr)
     {
-        pMgr->BackPatchWorker(&callSite);
+        target = callSiteTarget;
     }
+    else
+    {
+#ifndef _TARGET_X86_ 
+        // Have we failed the dispatch stub too many times?
+        if (flags & SDF_ResolveBackPatch)
+        {
+            pMgr->BackPatchWorker(&callSite);
+        }
 #endif
 
-    target = pMgr->ResolveWorker(&callSite, protectedObj, token, stubKind);
+        target = pMgr->ResolveWorker(&callSite, protectedObj, token, stubKind);
+    }
 
     GCPROTECT_END();
 
@@ -1750,6 +1785,36 @@ void BackPatchWorkerStaticStub(PCODE returnAddr, TADDR siteAddrForRegisterIndire
     VirtualCallStubManager::BackPatchWorkerStatic(returnAddr, siteAddrForRegisterIndirect);
 }
 #endif
+
+class CheckAddDevirtFunctor
+{
+    VirtualCallStubManager *m_stubManager;
+    MethodTable *m_pInterfaceMTToDispatchTo;
+    StubCallSite* m_pCallSite;
+    PCODE m_stub;
+
+public:
+    CheckAddDevirtFunctor(VirtualCallStubManager *stubManager, MethodTable *pInterfaceMTToDispatchTo, StubCallSite* pCallSite, PCODE stub) :
+        m_stubManager(stubManager),
+        m_pInterfaceMTToDispatchTo(pInterfaceMTToDispatchTo),
+        m_pCallSite(pCallSite),
+        m_stub(stub)
+    {
+    }
+
+    bool operator()()
+    {
+        if (m_pInterfaceMTToDispatchTo != NULL)
+        {
+            if (IsInterfaceDirectCallableGivenCallAttempt(m_pInterfaceMTToDispatchTo))
+            {
+                m_stubManager->BackPatchSite(m_pCallSite, m_stub, true); 
+                return true;
+            }
+        }
+        return false;
+    }
+};
 
 PCODE VirtualCallStubManager::ResolveWorker(StubCallSite* pCallSite,
                                             OBJECTREF *protectedObj,
@@ -1892,14 +1957,18 @@ PCODE VirtualCallStubManager::ResolveWorker(StubCallSite* pCallSite,
     }
     EX_END_CATCH (SwallowAllExceptions);
 
+    MethodTable *pInterfaceMTToDispatchTo = NULL;
+    bool tryToGetDevirtualizableMT = true;
+
     /////////////////////////////////////////////////////////////////////////////////////
     // If we failed to find a target in either the resolver or cache entry hash tables,
     // we need to perform a full resolution of the token and type.
     //@TODO: Would be nice to add assertion code to ensure we only ever call Resolver once per <token,type>.
     if (target == NULL)
     {
+        tryToGetDevirtualizableMT = false;
         CONSISTENCY_CHECK(stub == CALL_STUB_EMPTY_ENTRY);
-        patch = Resolver(objectType, token, protectedObj, &target, TRUE /* throwOnConflict */);
+        patch = Resolver(objectType, token, protectedObj, &target, &pInterfaceMTToDispatchTo, TRUE /* throwOnConflict */);
 
 #if defined(_DEBUG) 
         if ( !objectType->IsComObjectType() &&
@@ -2003,35 +2072,51 @@ PCODE VirtualCallStubManager::ResolveWorker(StubCallSite* pCallSite,
                     //     no use in creating it.
                     if (pResolveHolder != NULL && stubKind == SK_LOOKUP)
                     {
-                        DispatchEntry entryD;
-                        Prober probeD(&entryD);
-                        if (bCreateDispatchStub &&
-                            dispatchers->SetUpProber(token.To_SIZE_T(), (size_t) objectType, &probeD))
+                        if (tryToGetDevirtualizableMT)
                         {
-                            // We are allowed to create a reusable dispatch stub for all assemblies
-                            // this allows us to optimize the call interception case the same way
-                            DispatchHolder *pDispatchHolder = NULL;
-                            PCODE addrOfDispatch = (PCODE)(dispatchers->Find(&probeD));
-                            if (addrOfDispatch == CALL_STUB_EMPTY_ENTRY)
+                            pInterfaceMTToDispatchTo = TokenToDevirtualizableMethodTable(token);
+                        }
+
+                        if (pInterfaceMTToDispatchTo != NULL)
+                        {
+                            if (IsInterfaceDirectCallableGivenCallAttempt(pInterfaceMTToDispatchTo))
                             {
-                                PCODE addrOfFail = pResolveHolder->stub()->failEntryPoint();
-                                pDispatchHolder = GenerateDispatchStub(
-                                    target, addrOfFail, objectType, token.To_SIZE_T());
-                                dispatchers->Add((size_t)(pDispatchHolder->stub()->entryPoint()), &probeD);
+                                stub = target;
+                            }
+                        }
+
+                        if (stub != target)
+                        {
+                            DispatchEntry entryD;
+                            Prober probeD(&entryD);
+                            if (bCreateDispatchStub &&
+                                dispatchers->SetUpProber(token.To_SIZE_T(), (size_t) objectType, &probeD))
+                            {
+                                // We are allowed to create a reusable dispatch stub for all assemblies
+                                // this allows us to optimize the call interception case the same way
+                                DispatchHolder *pDispatchHolder = NULL;
+                                PCODE addrOfDispatch = (PCODE)(dispatchers->Find(&probeD));
+                                if (addrOfDispatch == CALL_STUB_EMPTY_ENTRY)
+                                {
+                                    PCODE addrOfFail = pResolveHolder->stub()->failEntryPoint();
+                                    pDispatchHolder = GenerateDispatchStub(
+                                        target, addrOfFail, objectType, token.To_SIZE_T());
+                                    dispatchers->Add((size_t)(pDispatchHolder->stub()->entryPoint()), &probeD);
+                                }
+                                else
+                                {
+                                    pDispatchHolder = DispatchHolder::FromDispatchEntry(addrOfDispatch);
+                                }
+
+                                // Now assign the entrypoint to stub
+                                CONSISTENCY_CHECK(CheckPointer(pDispatchHolder));
+                                stub = pDispatchHolder->stub()->entryPoint();
+                                CONSISTENCY_CHECK(stub != NULL);
                             }
                             else
                             {
-                                pDispatchHolder = DispatchHolder::FromDispatchEntry(addrOfDispatch);
+                                insertKind = DispatchCache::IK_SHARED;
                             }
-
-                            // Now assign the entrypoint to stub
-                            CONSISTENCY_CHECK(CheckPointer(pDispatchHolder));
-                            stub = pDispatchHolder->stub()->entryPoint();
-                            CONSISTENCY_CHECK(stub != NULL);
-                        }
-                        else
-                        {
-                            insertKind = DispatchCache::IK_SHARED;
                         }
                     }
                 }
@@ -2157,7 +2242,14 @@ PCODE VirtualCallStubManager::ResolveWorker(StubCallSite* pCallSite,
 
             if (stubKind == SK_LOOKUP)
             {
-                BackPatchSite(pCallSite, (PCODE)stub);
+                if (stub == target)
+                {
+                    pInterfaceMTToDispatchTo->GetLoaderAllocator()->CheckAndAddToDevirtVSDTable(pInterfaceMTToDispatchTo, pCallSite->GetIndirectCell(), pCallSite->GetSiteTarget(), CheckAddDevirtFunctor(this, pInterfaceMTToDispatchTo, pCallSite, (PCODE)stub));
+                }
+                else
+                {
+                    BackPatchSite(pCallSite, (PCODE)stub, false);
+                }
             }
         }
     }
@@ -2185,6 +2277,7 @@ VirtualCallStubManager::Resolver(
     DispatchToken token,
     OBJECTREF   * protectedObj, // this one can actually be NULL, consider using pMT is you don't need the object itself
     PCODE *       ppTarget,
+    MethodTable   **pInterfaceMT,
     BOOL          throwOnConflict)
 {
     CONTRACTL {
@@ -2193,6 +2286,13 @@ VirtualCallStubManager::Resolver(
         PRECONDITION(CheckPointer(pMT));
         PRECONDITION(TypeHandle(pMT).CheckFullyLoaded());
     } CONTRACTL_END;
+
+    MethodTable *pInterfaceMTForNull = nullptr;
+
+    if (pInterfaceMT == nullptr)
+        pInterfaceMT = &pInterfaceMTForNull;
+
+    *pInterfaceMT = TokenToDevirtualizableMethodTable(token);
 
 #ifdef _DEBUG 
     MethodTable * dbg_pTokenMT = pMT;
@@ -2359,7 +2459,7 @@ VirtualCallStubManager::Resolver(
         TypeHandle resulTypeHnd = resultTypeObj->GetType();
         MethodTable *pResultMT = resulTypeHnd.GetMethodTable();
 
-        return Resolver(pResultMT, token, protectedObj, ppTarget, throwOnConflict);
+        return Resolver(pResultMT, token, protectedObj, ppTarget, pInterfaceMT, throwOnConflict);
     }
 #endif // FEATURE_ICASTABLE
 
@@ -2560,7 +2660,7 @@ VirtualCallStubManager::GetTarget(
 
     // TODO: passing NULL as protectedObj here can lead to incorrect behavior for ICastable objects
     // We need to review if this is the case and refactor this code if we want ICastable to become officially supported    
-    fPatch = Resolver(pMT, token, NULL, &target, throwOnConflict);
+    fPatch = Resolver(pMT, token, NULL, &target, NULL, throwOnConflict);
     _ASSERTE(!throwOnConflict || target != NULL);
 
 #ifndef STUB_DISPATCH_PORTABLE
@@ -2667,7 +2767,7 @@ void VirtualCallStubManager::BackPatchWorker(StubCallSite* pCallSite)
         PCODE failEntry    = dispatchStub->failTarget();
         ResolveStub* resolveStub  = ResolveHolder::FromFailEntry(failEntry)->stub();
         PCODE resolveEntry = resolveStub->resolveEntryPoint();
-        BackPatchSite(pCallSite, resolveEntry);
+        BackPatchSite(pCallSite, resolveEntry, false);
 
         LOG((LF_STUBS, LL_INFO10000, "BackPatchWorker call-site" FMT_ADDR "dispatchStub" FMT_ADDR "\n",
              DBG_ADDR(pCallSite->GetReturnAddress()), DBG_ADDR(dispatchHolder->stub())));
@@ -2684,7 +2784,7 @@ void VirtualCallStubManager::BackPatchWorker(StubCallSite* pCallSite)
 //----------------------------------------------------------------------------
 /* consider changing the call site to point to stub, if appropriate do it
 */
-void VirtualCallStubManager::BackPatchSite(StubCallSite* pCallSite, PCODE stub)
+void VirtualCallStubManager::BackPatchSite(StubCallSite* pCallSite, PCODE stub, bool devirtualizedTargetNotStub)
 {
     CONTRACTL {
         NOTHROW;
@@ -2704,27 +2804,34 @@ void VirtualCallStubManager::BackPatchSite(StubCallSite* pCallSite, PCODE stub)
     if (prior == patch)
         return;
 
-    //we only want to do the following transitions for right now:
-    //  prior           new
-    //  lookup          dispatching or resolving
-    //  dispatching     resolving
-    if (isResolvingStub(prior))
-        return;
-
-    if(isDispatchingStub(stub))
+    if (devirtualizedTargetNotStub)
     {
-        if(isDispatchingStub(prior))
-        {
-            return;
-        }
-        else
-        {
-            stats.site_write_mono++;
-        }
+        stats.site_write_direct++;
     }
     else
     {
-        stats.site_write_poly++;
+        //we only want to do the following transitions for right now:
+        //  prior           new
+        //  lookup          dispatching or resolving
+        //  dispatching     resolving
+        if (isResolvingStub(prior))
+            return;
+
+        if(isDispatchingStub(stub))
+        {
+            if(isDispatchingStub(prior))
+            {
+                return;
+            }
+            else
+            {
+                stats.site_write_mono++;
+            }
+        }
+        else
+        {
+            stats.site_write_poly++;
+        }
     }
 
     //patch the call site
@@ -3180,6 +3287,7 @@ void VirtualCallStubManager::LogStats()
     g_site_write += stats.site_write;
     g_site_write_poly += stats.site_write_poly;
     g_site_write_mono += stats.site_write_mono;
+    g_site_write_direct += stats.site_write_direct;
     g_worker_call += stats.worker_call;
     g_worker_call_no_patch += stats.worker_call_no_patch;
     g_worker_collide_to_mono += stats.worker_collide_to_mono;
@@ -3195,6 +3303,7 @@ void VirtualCallStubManager::LogStats()
     stats.site_write = 0;
     stats.site_write_poly = 0;
     stats.site_write_mono = 0;
+    stats.site_write_direct = 0;
     stats.worker_call = 0;
     stats.worker_call_no_patch = 0;
     stats.worker_collide_to_mono = 0;
@@ -4172,7 +4281,7 @@ MethodDesc *VirtualCallStubManagerManager::Entry2MethodDesc(
     PCODE target = NULL;
     // TODO: passing NULL as protectedObj here can lead to incorrect behavior for ICastable objects
     // We need to review if this is the case and refactor this code if we want ICastable to become officially supported
-    VirtualCallStubManager::Resolver(pMT, token, NULL, &target, TRUE /* throwOnConflict */);
+    VirtualCallStubManager::Resolver(pMT, token, NULL, &target, NULL, TRUE /* throwOnConflict */);
 
     return pMT->GetMethodDescForSlotAddress(target);
 }

@@ -10279,3 +10279,206 @@ BOOL MethodTable::IsInheritanceChainFixedInCurrentVersionBubble()
 }
 
 #endif // FEATURE_READYTORUN_COMPILER
+
+BOOL MethodTableWriteableData::HasDerivedType() const
+{
+    LIMITED_METHOD_CONTRACT;
+    return m_dwFlags & enum_flag_DerivedType || LoaderAllocator::DynamicTypeLoaderOptimizationsDisabled();
+}
+
+BOOL MethodTableWriteableData::HasDerivedTypeInOtherLoaderAllocator() const
+{
+    LIMITED_METHOD_CONTRACT;
+    return m_dwFlags & enum_flag_DerivedTypeInOtherLoaderAllocator;
+}
+
+BOOL MethodTableWriteableData::HasMultipleDerivedTypes() const
+{
+    LIMITED_METHOD_CONTRACT;
+    return m_dwFlags & enum_flag_MultipleDerivedTypes || LoaderAllocator::DynamicTypeLoaderOptimizationsDisabled();
+}
+
+BOOL MethodTableWriteableData::HasDynamicCastToTypeBeenPerformed() const
+{
+    LIMITED_METHOD_CONTRACT;
+    return m_dwFlags & enum_flag_DynamicCastPerformedOnType;
+}
+
+
+void MethodTableWriteableData::NotifyInterfaceUsedViaDynamicCastBehavior(MethodTable *thisType)
+{
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    } CONTRACTL_END;
+
+    NotifyInterfaceUsedViaDynamicCastBehavior_Worker(thisType);
+
+    PTR_InterfaceInfo ifMap = thisType->GetInterfaceMap();
+    for( unsigned i = 0; i < thisType->GetNumInterfaces(); ++i )
+    {
+        PTR_InterfaceInfo info = ifMap + i;
+        MethodTable *requiredImplementationInterface = info->GetMethodTable();
+        requiredImplementationInterface->GetWriteableDataForWrite()->NotifyInterfaceUsedViaDynamicCastBehavior_Worker(requiredImplementationInterface);
+    }
+
+    SetHasDynamicCastToTypeBeenPerformed();
+}
+
+void MethodTableWriteableData::NotifyInterfaceUsedViaDynamicCastBehavior_Worker(MethodTable *thisType)
+{
+    CONTRACTL {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    } CONTRACTL_END;
+
+    DWORD initialFlags = *(volatile DWORD *)&m_dwFlags;
+
+    bool repeat = true;
+
+    while(repeat)
+    {
+        DWORD newFlags = initialFlags;
+
+        // Specify MultipleDerivedTypes which indicates that a unique type can't be found, and 
+        // specify DerivedType
+        newFlags |= enum_flag_DerivedType | enum_flag_MultipleDerivedTypes; 
+
+        if (newFlags != initialFlags)
+        {
+            DWORD actualInitialFlags = FastInterlockCompareExchange(EnsureWritablePages((ULONG*)&m_dwFlags), newFlags, initialFlags);
+            repeat = initialFlags != actualInitialFlags;
+            initialFlags = actualInitialFlags;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    thisType->GetLoaderAllocator()->NotifyDerivedTypeInfo(thisType, nullptr);
+}
+
+void MethodTableWriteableData::DeclareDerivedType(MethodTable *thisType, MethodTable *otherType)
+{
+    STANDARD_VM_CONTRACT;
+
+    _ASSERTE(!otherType->IsInterface());
+
+    DWORD initialFlags = *(volatile DWORD *)&m_dwFlags;
+
+    bool repeat = true;
+
+    otherType->GetLoaderAllocator()->AddDerivedTypeInfo(thisType, otherType, !(initialFlags & enum_flag_DerivedType));
+
+    while(repeat)
+    {
+        DWORD newFlags = initialFlags;
+
+        newFlags |= enum_flag_DerivedType;
+
+        if (thisType->GetLoaderAllocator() != otherType->GetLoaderAllocator())
+        {
+            newFlags |= enum_flag_DerivedTypeInOtherLoaderAllocator;
+        }
+
+        // If there already was a derived type, there are now multiple derived types
+        if (initialFlags & enum_flag_DerivedType)
+        {
+            newFlags |= enum_flag_MultipleDerivedTypes;
+        }
+
+        if (newFlags != initialFlags)
+        {
+            DWORD actualInitialFlags = FastInterlockCompareExchange(EnsureWritablePages((ULONG*)&m_dwFlags), newFlags, initialFlags);
+            repeat = initialFlags != actualInitialFlags;
+            initialFlags = actualInitialFlags;
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    thisType->GetLoaderAllocator()->NotifyDerivedTypeInfo(thisType, otherType);
+}
+
+CheckableConditionForOptimizationChange MethodTableWriteableData::GenerateCheckableConditionForMethodSlot(const MethodTable *pMT, UINT32 slotNum) const
+{
+    LIMITED_METHOD_CONTRACT;
+
+    _ASSERTE(!pMT->IsInterface());
+
+    CheckableConditionForOptimizationChange conditionCheck = ProduceCheckableCondition();
+
+    if (!(conditionCheck.m_currentValueOfFlags & enum_flag_DerivedType))
+    {
+        // No derived type has overriden method. Check based on that flag
+        conditionCheck.m_maskOfFlagsWhichAffectOptimizationOpportunity = enum_flag_DerivedType;
+        return conditionCheck;
+    }
+
+    if (!(conditionCheck.m_currentValueOfFlags & enum_flag_MultipleDerivedTypes))
+    {
+        // Only 1 type has derived from this type so far, the next type that derives may change
+        // the rules
+        conditionCheck.m_maskOfFlagsWhichAffectOptimizationOpportunity = enum_flag_MultipleDerivedTypes;
+        return conditionCheck;
+    }
+
+    return CheckableConditionForOptimizationChange();
+}
+
+
+CheckableConditionForOptimizationChange MethodTableWriteableData::GenerateCheckableConditionForTypeDerivationChange(const MethodTable *pMT) const
+{
+    LIMITED_METHOD_CONTRACT;
+
+    _ASSERTE(!pMT->IsInterface());
+
+    CheckableConditionForOptimizationChange conditionCheck = ProduceCheckableCondition();
+
+    if (!(conditionCheck.m_currentValueOfFlags & enum_flag_DerivedType))
+    {
+        // No derived type has overriden method. Check based on that flag
+        conditionCheck.m_maskOfFlagsWhichAffectOptimizationOpportunity = enum_flag_DerivedType;
+        return conditionCheck;
+    }
+
+    if (!(conditionCheck.m_currentValueOfFlags & enum_flag_MultipleDerivedTypes))
+    {
+        // Only 1 type has derived from this type so far, the next type that derives may change
+        // the rules
+        conditionCheck.m_maskOfFlagsWhichAffectOptimizationOpportunity = enum_flag_MultipleDerivedTypes;
+        return conditionCheck;
+    }
+
+    return CheckableConditionForOptimizationChange();
+}
+
+CheckableConditionForOptimizationChange MethodTableWriteableData::GenerateCheckableConditionForNewInterfaceImplementation(const MethodTable *pMT) const
+{
+    LIMITED_METHOD_CONTRACT;
+    _ASSERTE(pMT->IsInterface());
+
+    CheckableConditionForOptimizationChange conditionCheck = ProduceCheckableCondition();
+
+    if (!(conditionCheck.m_currentValueOfFlags & enum_flag_DerivedType))
+    {
+        // No derived type has overriden method. Check based on that flag
+        conditionCheck.m_maskOfFlagsWhichAffectOptimizationOpportunity = enum_flag_DerivedType;
+        return conditionCheck;
+    }
+
+    if (!(conditionCheck.m_currentValueOfFlags & enum_flag_MultipleDerivedTypes))
+    {
+        // Only 1 type has derived from this type so far, the next type that derives may change
+        // the rules
+        conditionCheck.m_maskOfFlagsWhichAffectOptimizationOpportunity = enum_flag_MultipleDerivedTypes;
+        return conditionCheck;
+    }
+
+    return CheckableConditionForOptimizationChange();
+}
