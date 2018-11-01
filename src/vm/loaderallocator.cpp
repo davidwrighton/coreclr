@@ -1999,6 +1999,8 @@ void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pD
 {
     STANDARD_VM_CONTRACT;
 
+    GCX_COOP();
+
 #ifndef DACCESS_COMPILE
     CrstHolder ch(&m_crstLoaderAllocator);
     _ASSERTE(!pDerivedOrImplementingType->IsInterface());
@@ -2008,6 +2010,13 @@ void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pD
     {
         _ASSERTE(pDerivedOrImplementingType->GetParentMethodTable() == pBaseType);
         m_derivedTypes.Add(pDerivedOrImplementingType);
+
+#ifndef CROSSGEN_COMPILE
+        printf("\n*** Class %p (%s) has derived type %p (%s)\n", 
+            pBaseType, pBaseType->GetDebugClassName(), 
+            pDerivedOrImplementingType, pDerivedOrImplementingType->GetDebugClassName()); 
+        fflush(stdout);
+#endif
     }
     else
     {
@@ -2015,6 +2024,14 @@ void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pD
         entry.m_pInterfaceType = pBaseType;
         entry.m_pImplementingType = pDerivedOrImplementingType;
         m_interfaceImplementations.Add(entry);
+
+#ifndef CROSSGEN_COMPILE
+        printf("\n@@@ Interface %p (%s) has derived type %p (%s)\n", 
+            pBaseType, pBaseType->GetDebugClassName(), 
+            pDerivedOrImplementingType, pDerivedOrImplementingType->GetDebugClassName()); 
+        fflush(stdout);
+#endif
+
     }
 #endif // DACCESS_COMPILE
 }
