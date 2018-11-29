@@ -34,7 +34,7 @@ void LoaderAllocator::Init()
 {
 #ifndef DACCESS_COMPILE
     s_activeLoaderAllocators = new SArray<LoaderAllocator*>();
-    s_ActiveLoaderAllocatorsCrst.Init(CrstActiveLoaderAllocators);
+    s_ActiveLoaderAllocatorsCrst.Init(CrstActiveLoaderAllocators, CRST_UNSAFE_ANYMODE);
 #endif // !DACCESS_COMPILE
 }
 
@@ -1995,28 +1995,61 @@ LoaderAllocator* LoaderAllocator::MTGetLoaderAllocator(MethodTable *pMT)
 }
 #endif // !DACCESS_COMPILE
 
-void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pDerivedOrImplementingType)
+void LoaderAllocator::NotifyDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pDerivedOrImplementingType)
 {
     STANDARD_VM_CONTRACT;
 
-    GCX_COOP();
+#ifndef DACCESS_COMPILE
+    if (pBaseType->IsInterface())
+    {
+        GCX_COOP();
+
+        CrstHolder ch(&m_crstLoaderAllocator);
+        auto iterDevirtEntryToRemove = m_devirtVSD.Begin(pBaseType);
+        auto iterDevirtEntryToRemoveEnd = m_devirtVSD.End(pBaseType);
+
+        while (iterDevirtEntryToRemove != iterDevirtEntryToRemoveEnd)
+        {
+            auto oldIterator = iterDevirtEntryToRemove;
+            DevirtualizedVSDLookup vsdLookup = *oldIterator;
+            *vsdLookup.m_callsite = vsdLookup.m_lookupstub;
+            ++iterDevirtEntryToRemove;
+            m_devirtVSD.Remove(oldIterator);
+        }
+    }
+#endif // DACCESS_COMPILE
+}
+
+void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pDerivedOrImplementingType, bool firstTypeToAdd)
+{
+    STANDARD_VM_CONTRACT;
 
 #ifndef DACCESS_COMPILE
-    CrstHolder ch(&m_crstLoaderAllocator);
-    _ASSERTE(!pDerivedOrImplementingType->IsInterface());
-    _ASSERTE(pDerivedOrImplementingType->GetLoaderAllocator() == this);
+    GCX_COOP();
 
-    if (!pBaseType->IsInterface())
+    CrstHolder ch(&m_crstLoaderAllocator);
+
+    // The first type to derive from an interface, and all types deriving from concrete types are
+    // added to the derivation tables. The first Type to Add check may race with other checks for interfaces
+    // so that there may be multiple copies of derived types in the interfaces table
+
+    if (!pBaseType->IsInterface() || firstTypeToAdd)
     {
-        _ASSERTE(pDerivedOrImplementingType->GetParentMethodTable() == pBaseType);
-        m_derivedTypes.Add(pDerivedOrImplementingType);
-    }
-    else
-    {
-        InterfaceTypeToImplementingTypeEntry entry;
-        entry.m_pInterfaceType = pBaseType;
-        entry.m_pImplementingType = pDerivedOrImplementingType;
-        m_interfaceImplementations.Add(entry);
+        _ASSERTE(!pDerivedOrImplementingType->IsInterface());
+        _ASSERTE(pDerivedOrImplementingType->GetLoaderAllocator() == this);
+
+        if (!pBaseType->IsInterface())
+        {
+            _ASSERTE(pDerivedOrImplementingType->GetParentMethodTable() == pBaseType);
+            m_derivedTypes.Add(pDerivedOrImplementingType);
+        }
+        else
+        {
+            InterfaceTypeToImplementingTypeEntry entry;
+            entry.m_pInterfaceType = pBaseType;
+            entry.m_pImplementingType = pDerivedOrImplementingType;
+            m_interfaceImplementations.Add(entry);
+        }
     }
 #endif // DACCESS_COMPILE
 }

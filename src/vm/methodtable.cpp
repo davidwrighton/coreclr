@@ -10231,13 +10231,7 @@ void MethodTableWriteableData::DeclareDerivedType(MethodTable *thisType, MethodT
 
     bool repeat = true;
 
-    // The first type to derive from an interface, and all types deriving from concrete types are
-    // reported to the derivation tables. This check may race with other checks for interfaces
-    // so that there may be multiple copies of derived types in the interfaces table. 
-    if (!thisType->IsInterface() || !(initialFlags & enum_flag_DerivedType))
-    {
-        otherType->GetLoaderAllocator()->AddDerivedTypeInfo(thisType, otherType);
-    }
+    otherType->GetLoaderAllocator()->AddDerivedTypeInfo(thisType, otherType, !(initialFlags & enum_flag_DerivedType));
 
     while(repeat)
     {
@@ -10267,6 +10261,8 @@ void MethodTableWriteableData::DeclareDerivedType(MethodTable *thisType, MethodT
             break;
         }
     }
+
+    thisType->GetLoaderAllocator()->NotifyDerivedTypeInfo(thisType, otherType);
 }
 
 CheckableConditionForOptimizationChange MethodTableWriteableData::GenerateCheckableConditionForMethodSlot(const MethodTable *pMT, UINT32 slotNum) const

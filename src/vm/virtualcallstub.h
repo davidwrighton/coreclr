@@ -540,6 +540,7 @@ private:
                          DispatchToken   token,
                          OBJECTREF     * protectedObj,
                          PCODE         * ppTarget,
+                         MethodTable   **pInterfaceMT,
                          BOOL          throwOnConflict);
 
     // This can be used to find a target without needing the ability to throw
@@ -603,7 +604,7 @@ public:
     void BackPatchWorker(StubCallSite* pCallSite);
 
     //Change the callsite to point to stub
-    void BackPatchSite(StubCallSite* pCallSite, PCODE stub);
+    void BackPatchSite(StubCallSite* pCallSite, PCODE stub, bool devirtualizedTargetNotStub);
 
 public:
     /* the following two public functions are to support tracing or stepping thru
@@ -803,6 +804,7 @@ public:
         UINT32 site_write;              //# of call site backpatch writes
         UINT32 site_write_poly;         //# of call site backpatch writes to point to resolve stubs
         UINT32 site_write_mono;         //# of call site backpatch writes to point to dispatch stubs
+        UINT32 site_write_direct;       //# of call site backpatch writes to point to directly to target function
         UINT32 worker_call;             //# of calls into ResolveWorker
         UINT32 worker_call_no_patch;    //# of times call_worker resulted in no patch
         UINT32 worker_collide_to_mono;  //# of times we converted a poly stub to a mono stub instead of writing the cache entry

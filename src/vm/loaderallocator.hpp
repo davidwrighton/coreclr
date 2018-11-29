@@ -169,6 +169,33 @@ class LoaderAllocator
     };
     typedef SHash<InterfaceImplementingTypeTableTraits> InterfaceToImplmentingTypeTable;
 
+    struct DevirtualizedVSDLookup
+    {
+        MethodTable *m_pType;
+        PTR_PCODE m_callsite;
+        PCODE m_lookupstub;
+    };
+
+    class DevirtualizedVSDLookupTableTraits : public DefaultSHashTraits<DevirtualizedVSDLookup>
+    {
+    public:
+        typedef MethodTable *key_t;
+        static const DevirtualizedVSDLookup Null() { DevirtualizedVSDLookup e; e.m_pType = NULL; e.m_callsite = NULL; e.m_lookupstub = NULL; return e; }
+        static bool IsNull(const DevirtualizedVSDLookup &e) { return e.m_pType == NULL; }
+
+        static DevirtualizedVSDLookup Deleted() { DevirtualizedVSDLookup e; e.m_pType = (MethodTable*)-1; e.m_callsite = NULL; e.m_lookupstub = NULL; return e; }
+        static bool IsDeleted(const DevirtualizedVSDLookup &e) { return ((int)e.m_pType) == -1; }
+
+        static MethodTable * GetKey(const DevirtualizedVSDLookup &value) { return value.m_pType; }
+        static count_t Hash(MethodTable *mt) { return (count_t) ((UINT_PTR) mt >> 3); }
+        static BOOL Equals(MethodTable *mt1, MethodTable *mt2)
+        {
+            return mt1 == mt2;
+        }
+    };
+
+    typedef SHash<DevirtualizedVSDLookupTableTraits> DevirtualizedVSDLookupTable;
+
     VPTR_BASE_VTABLE_CLASS(LoaderAllocator)
     VPTR_UNIQUE(VPTRU_LoaderAllocator)
 protected:    
@@ -216,6 +243,7 @@ protected:
     // Per LoaderAllocator stored type system structures
     TypeToDerivedTypeTable m_derivedTypes;
     InterfaceToImplmentingTypeTable m_interfaceImplementations;
+    DevirtualizedVSDLookupTable m_devirtVSD;
 
 public:
     static void Init();
@@ -572,7 +600,13 @@ public:
 
     //****************************************************************************************
     // Methods to support understanding the relationships between types
-    void AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pDerivedType);
+
+    // Call before flags are set. Is done on the loader allocator of pDerivedType
+    void AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pDerivedType, bool firstTypeToAdd);
+
+    // Call after flags are set. Is done on the loader allocator of pBaseType
+    void NotifyDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pDerivedType);
+
     bool MayInsertReferenceToTypeHandleInCode(TypeHandle th);
 
     // Algorithms to identify optimization opportunities. These functions may return inaccurate results
@@ -580,6 +614,28 @@ public:
     // return true if the condition may hold, or it is difficult to tell if it does not hold
 
 #ifndef DACCESS_COMPILE
+    template <class TLambda>
+    void CheckAndAddToDevirtVSDTable(MethodTable *pMT, PTR_PCODE callsite, PCODE lookupStub, TLambda &lambda)
+    {
+        CONTRACTL
+        {
+            THROWS;
+            MODE_COOPERATIVE;
+            GC_NOTRIGGER;
+        }
+        CONTRACTL_END;
+
+        CrstHolder ch(&m_crstLoaderAllocator);
+        if (lambda())
+        {
+            DevirtualizedVSDLookup entry;
+            entry.m_pType = pMT;
+            entry.m_callsite = callsite;
+            entry.m_lookupstub = lookupStub;
+            m_devirtVSD.Add(entry);
+        }
+    }
+
     template<class TLambda>
     bool WalkDerivingAndImplementingMethodTables(MethodTable *pMT, TLambda &lambda)
     {
