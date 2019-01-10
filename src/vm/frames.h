@@ -3675,4 +3675,6 @@ public:
 #undef FPO_ON
 #endif
 
+#include "crossloaderallocatorhash.inl"
+
 #endif  //__frames_h__

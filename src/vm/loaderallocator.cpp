@@ -26,6 +26,30 @@
 #define STUBMANAGER_RANGELIST(stubManager) (NULL)
 #endif
 
+void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, MethodTable *pMTOther)
+{
+    struct SomeTraits
+    {
+        typedef MethodTable *TKey;
+        typedef void *TValue;
+    };
+    CrossLoaderAllocatorHashNoRemove<SomeTraits> laHash;
+
+#ifndef DACCESS_COMPILE
+    laHash.Add(pMT, pMTOther, pMTOther->GetLoaderAllocator());
+#endif
+
+    laHash.VisitValuesOfKey(pMT, [](OBJECTREF obj, void *pVisit) { return (pVisit != NULL);});
+
+#ifndef CROSSGEN_COMPILE
+    GCHeapHash<GCHeapHashTraitsPointerToPointerList<int*, false>> hash(gcheap);
+#ifndef DACCESS_COMPILE
+    hash.Add(&ptr, [](PTRARRAYREF arr, INT32 index) {});
+#endif
+    hash.GetValueIndex(&ptr);
+#endif
+}
+
 UINT64 LoaderAllocator::cLoaderAllocatorsCreated = 1;
 
 LoaderAllocator::LoaderAllocator()  
@@ -104,6 +128,24 @@ LoaderAllocator::~LoaderAllocator()
     _ASSERTE(m_pJumpStubCache == NULL);
 #endif
 }
+
+#ifndef CROSSGEN_COMPILE
+OBJECTREF LoaderAllocator::GetHandleValue(LOADERHANDLE handle)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_COOPERATIVE;
+        SO_TOLERANT;
+    }
+    CONTRACTL_END;
+
+    OBJECTREF objRet = NULL;
+    GET_LOADERHANDLE_VALUE_FAST(this, handle, &objRet);
+    return objRet;
+}
+#endif
 
 #ifndef DACCESS_COMPILE
 //---------------------------------------------------------------------------------------
@@ -868,22 +910,6 @@ LOADERHANDLE LoaderAllocator::AllocateHandle(OBJECTREF value)
     GCPROTECT_END();
 
     return retVal;
-}
-
-OBJECTREF LoaderAllocator::GetHandleValue(LOADERHANDLE handle)
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_COOPERATIVE;
-        SO_TOLERANT;
-    }
-    CONTRACTL_END;
-
-    OBJECTREF objRet = NULL;
-    GET_LOADERHANDLE_VALUE_FAST(this, handle, &objRet);
-    return objRet;
 }
 
 void LoaderAllocator::FreeHandle(LOADERHANDLE handle)

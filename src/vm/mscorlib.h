@@ -1390,6 +1390,24 @@ DEFINE_CLASS(OBJECT_EQUALITYCOMPARER, CollectionsGeneric, ObjectEqualityComparer
 
 DEFINE_CLASS(INATTRIBUTE, Interop, InAttribute)
 
+DEFINE_CLASS_U(CompilerServices,           GCHeapHash,                      GCHeapHashObject)
+DEFINE_FIELD_U(_data,                      GCHeapHashObject,                _data)
+DEFINE_FIELD_U(_count,                     GCHeapHashObject,                _count)
+
+DEFINE_CLASS(GCHEAPHASH, CompilerServices, GCHeapHash)
+
+DEFINE_CLASS_U(CompilerServices,           LAHashDependentHashTracker,      LAHashDependentHashTrackerObject)
+DEFINE_FIELD_U(_dependentHandle,           LAHashDependentHashTrackerObject,_dependentHandle)
+DEFINE_FIELD_U(_loaderAllocator,           LAHashDependentHashTrackerObject,_loaderAllocator)
+
+DEFINE_CLASS(LAHASHDEPENDENTHASHTRACKER, CompilerServices, LAHashDependentHashTracker)
+
+DEFINE_CLASS_U(CompilerServices,           LAHashKeyToTrackers,             LAHashKeyToTrackersObject)
+DEFINE_FIELD_U(_trackerOrTrackerSet,       LAHashKeyToTrackersObject,       _trackerOrTrackerSet)
+DEFINE_FIELD_U(_key,                       LAHashKeyToTrackersObject,       _key)
+
+DEFINE_CLASS(LAHASHKEYTOTRACKERS, CompilerServices, LAHashKeyToTrackers)
+
 #undef DEFINE_CLASS
 #undef DEFINE_METHOD
 #undef DEFINE_FIELD
