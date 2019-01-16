@@ -480,6 +480,69 @@ bool CrossLoaderAllocatorHash<TRAITS>::VisitValuesOfKey(TKey key, Visitor &visit
     return result;
 }
 
+template <class TRAITS>
+template <class Visitor>
+bool CrossLoaderAllocatorHash<TRAITS>::VisitAllKeyValuePairs(TKey key, Visitor &visitor)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    // This data structure actually doesn't have this invariant, but it is expected that uses of this
+    // data structure will require that the key's loader allocator is the same as that of this data structure.
+    _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
+
+    // Get pointer to key data in SHash used for non-LA crossing data.
+
+    auto beginLAHash = _withinLAHash.Begin();
+    auto endLAHash = _withinLAHash.End();
+
+    // Walk all entries in LAHash
+    for (auto iLAHash = beginLAHash; iLAHash != endLAHash; ++iLAHash)
+    {
+        auto beginLocalWalk = pAssociatedWithKeyData->_values.Begin();
+        auto endLocalWalk = pAssociatedWithKeyData->_values.Begin();
+        OBJECTREF nullObjectRef = NULL;
+        for (auto i = beginLocalWalk; i != endLocalWalk; ++i)
+        {
+            if (!visitor(nullObjectRef, pAssociatedWithKeyData->_key, *i))
+                return false;
+        }
+    }
+
+    bool result = true;
+#ifndef CROSSGEN_COMPILE
+    if (LAToDependentTrackerHash != NULL)
+    {
+        // If there are remote entries, walk them
+
+        // There is non-local data;
+        struct 
+        {
+            GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
+            GCHeapHashDependentHashTrackerHash dependentTrackerHash;
+            LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
+            LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
+            LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
+            GCHEAPHASHOBJECTREF returnValue;
+        } gc;
+        ZeroMemory(&gc, sizeof(gc));
+        GCPROTECT_BEGIN(gc)
+        {
+            gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
+            result = gc.dependentTrackerHash.VisitAllEntryIndices(VisitAllEntryDependentTrackerHash<Visitor>(&visitor, &gc.dependentTrackerHash));
+        }
+        GCPROTECT_END();
+    }
+#endif // !CROSSGEN_COMPILE
+
+    return result;
+}
+
 #ifndef DACCESS_COMPILE
 template <class TRAITS>
 void CrossLoaderAllocatorHash<TRAITS>::RemoveAll(TKey key)
@@ -611,6 +674,80 @@ template <class Visitor>
             }
         }
 readyToReturn:;
+    }
+    GCPROTECT_END();
+
+    return result;
+}
+
+template <class TRAITS>
+template <class Visitor>
+/*static*/ bool CrossLoaderAllocatorHash<TRAITS>::VisitTrackerAllEntries(LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    struct _gcStruct
+    {
+        LAHASHDEPENDENTHASHTRACKERREF tracker;
+        OBJECTREF loaderAllocatorRef;
+        GCHEAPHASHOBJECTREF keyToValuesHashObject;
+        KeyToValuesGCHeapHash keyToValuesHash;
+        UPTRARRAYREF keyValueStore;
+    }gc;
+
+    class VisitAllEntryKeyValueHash
+    {
+        public:
+        Visitor *_pVisitor;
+        KeyToValuesGCHeapHash *_pKeysToValueHash;
+        UPTRARRAYREF *_pKeyValueStore;
+        OBJECTREF *pLoaderAllocatorRef;
+
+        VisitAllEntryKeyValueHash(Visitor *pVisitor,  KeyToValuesGCHeapHash *pKeysToValueHash, UPTRARRAYREF *pKeyValueStore, OBJECTREF *pLoaderAllocatorRef) : 
+            _pVisitor(pVisitor),
+            _pKeysToValueHash(pKeysToValueHash)
+            _pKeyValueStore(pKeyValueStore),
+            _pLoaderAllocatorRef(pLoaderAllocatorRef)
+            {}
+
+        bool operator()(INT32 index)
+        {
+            WRAPPER_NO_CONTRACT;
+
+            _pKeysToValueHash->GetElement(index, *_pKeyValueStore);
+
+            DWORD usedEntries = ((DWORD)(*_pKeyValueStore)->GetDirectPointerToNonObjectElements()[1]) + 2;
+            for (DWORD index = 2; index < usedEntries; ++index)
+            {
+                result = visitor(*pLoaderAllocatorRef, (TKey)(*_pKeyValueStore)->GetDirectPointerToNonObjectElements()[0], (TValue)(*_pKeyValueStore)->GetDirectPointerToNonObjectElements()[index]);
+                if (!result)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    };
+
+    ZeroMemory(&gc, sizeof(gc));
+    gc.tracker = trackerUnsafe;
+
+    bool result = true;
+
+    GCPROTECT_BEGIN(gc);
+    {
+        gc.tracker->GetDependentAndLoaderAllocator(&gc.loaderAllocatorRef, &gc.keyToValuesHashObject);
+        if (gc.keyToValuesHashObject != NULL)
+        {
+            gc.keyToValuesHash = KeyToValuesGCHeapHash(gc.keyToValuesHashObject);
+            result = gc.keyToValuesHash.VisitAllEntryIndices(VisitAllEntryKeyValueHash<Visitor>(&visitor, &gc.keyToValuesHash, &gc.keyValueStore, &gc.loaderAllocatorRef));
+        }
     }
     GCPROTECT_END();
 

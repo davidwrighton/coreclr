@@ -106,6 +106,10 @@ public:
     template <class Visitor>
     bool VisitValuesOfKey(TKey key, Visitor &visitor);
 
+    // Visit all key/value pairs
+    template <class Visitor>
+    bool VisitAllKeyValuePairs(Visitor &visitor);
+
     // Initialize this CrossLoaderAllocatorHash to be associated with a specific LoaderAllocator
     // Must be called before any use of Add
     void Init(LoaderAllocator *pAssociatedLoaderAllocator);
@@ -180,6 +184,28 @@ private:
         }
     };
 
+    template <class Visitor>
+    class VisitAllEntryDependentTrackerHash
+    {
+        public:
+        Visitor *_pVisitor;
+        GCHeapHashDependentHashTrackerHash *_pDependentTrackerHash;
+
+        VisitAllEntryDependentTrackerHash(Visitor *pVisitor,  GCHeapHashDependentHashTrackerHash *pDependentTrackerHash) : 
+            _pVisitor(pVisitor),
+            _pDependentTrackerHash(pDependentTrackerHash)
+            {}
+
+        bool operator()(INT32 index)
+        {
+            WRAPPER_NO_CONTRACT;
+
+            LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
+            _pDependentTrackerHash->GetElement(index, dependentTracker);
+            return VisitTrackerAllEntries(dependentTracker, *_pVisitor);
+        }
+    };
+
 #ifndef DACCESS_COMPILE
     class DeleteIndividualEntryKeyValueHash
     {
@@ -211,6 +237,8 @@ private:
     GCHEAPHASHOBJECTREF GetKeyToValueCrossLAHash(TKey key, LoaderAllocator* pValueLoaderAllocator);
     template <class Visitor>
     static bool VisitTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor);
+    template <class Visitor>
+    static bool VisitTrackerAllEntries(LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor);
     static void DeleteEntryTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe);
 #endif // !CROSSGEN_COMPILE
 
