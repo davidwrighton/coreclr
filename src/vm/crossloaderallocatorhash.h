@@ -75,7 +75,7 @@ struct WithinLoaderAllocatorData
 // Hashtable of pointer to pointer where the key may live in a different loader allocator than the value
 // and this should not keep the loaderallocator of Key alive.
 template <class TRAITS>
-class CrossLoaderAllocatorHashNoRemove
+class CrossLoaderAllocatorHash
 {
 private:
     typedef typename TRAITS::TKey TKey;
@@ -87,11 +87,11 @@ private:
 public:
 
 #ifndef DACCESS_COMPILE
-    // Add an entry to the CrossLoaderAllocatorHashNoRemove
+    // Add an entry to the CrossLoaderAllocatorHash
     // key must implement GetLoaderAllocator()
     void Add(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue);
 
-    // Add an entry to the CrossLoaderAllocatorHashNoRemove
+    // Add an entry to the CrossLoaderAllocatorHash
     // key must implement GetLoaderAllocator()
     void Remove(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue);
 

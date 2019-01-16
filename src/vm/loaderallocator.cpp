@@ -33,7 +33,7 @@ void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, Me
     struct SomeTraits : NoRemoveDefaultCrossLoaderAllocatorHashTraits<MethodTable *, void *>
     {
     };
-    CrossLoaderAllocatorHashNoRemove<SomeTraits> laHash;
+    CrossLoaderAllocatorHash<SomeTraits> laHash;
 
 #ifndef DACCESS_COMPILE
     laHash.Add(pMT, pMTOther, pMTOther->GetLoaderAllocator());
@@ -44,7 +44,7 @@ void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, Me
     struct SomeTraits2 : DefaultCrossLoaderAllocatorHashTraits<MethodTable *, void *>
     {
     };
-    CrossLoaderAllocatorHashNoRemove<SomeTraits2> laHash2;
+    CrossLoaderAllocatorHash<SomeTraits2> laHash2;
 
 #ifndef DACCESS_COMPILE
     laHash2.Add(pMT, pMTOther, pMTOther->GetLoaderAllocator());

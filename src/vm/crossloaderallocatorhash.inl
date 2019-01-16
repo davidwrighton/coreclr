@@ -256,7 +256,7 @@ template<class TKey>
 
 #ifndef DACCESS_COMPILE
 template <class TRAITS>
-void CrossLoaderAllocatorHashNoRemove<TRAITS>::Add(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue)
+void CrossLoaderAllocatorHash<TRAITS>::Add(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue)
 {
     CONTRACTL
     {
@@ -341,7 +341,7 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::Add(TKey key, TValue value, Loade
 
 #ifndef DACCESS_COMPILE
 template <class TRAITS>
-void CrossLoaderAllocatorHashNoRemove<TRAITS>::Remove(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue)
+void CrossLoaderAllocatorHash<TRAITS>::Remove(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue)
 {
     CONTRACTL
     {
@@ -403,7 +403,7 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::Remove(TKey key, TValue value, Lo
 
 template <class TRAITS>
 template <class Visitor>
-bool CrossLoaderAllocatorHashNoRemove<TRAITS>::VisitValuesOfKey(TKey key, Visitor &visitor)
+bool CrossLoaderAllocatorHash<TRAITS>::VisitValuesOfKey(TKey key, Visitor &visitor)
 {
     CONTRACTL
     {
@@ -482,7 +482,7 @@ bool CrossLoaderAllocatorHashNoRemove<TRAITS>::VisitValuesOfKey(TKey key, Visito
 
 #ifndef DACCESS_COMPILE
 template <class TRAITS>
-void CrossLoaderAllocatorHashNoRemove<TRAITS>::RemoveAll(TKey key)
+void CrossLoaderAllocatorHash<TRAITS>::RemoveAll(TKey key)
 {
     CONTRACTL
     {
@@ -553,7 +553,7 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::RemoveAll(TKey key)
 #endif // !DACCESS_COMPILE
 
 template <class TRAITS>
-void CrossLoaderAllocatorHashNoRemove<TRAITS>::Init(LoaderAllocator *pAssociatedLoaderAllocator)
+void CrossLoaderAllocatorHash<TRAITS>::Init(LoaderAllocator *pAssociatedLoaderAllocator)
 {
     _loaderAllocator = pAssociatedLoaderAllocator;
 }
@@ -561,7 +561,7 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::Init(LoaderAllocator *pAssociated
 #ifndef CROSSGEN_COMPILE
 template <class TRAITS>
 template <class Visitor>
-/*static*/ bool CrossLoaderAllocatorHashNoRemove<TRAITS>::VisitTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor)
+/*static*/ bool CrossLoaderAllocatorHash<TRAITS>::VisitTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor)
 {
     CONTRACTL
     {
@@ -618,7 +618,7 @@ readyToReturn:;
 }
 
 template <class TRAITS>
-/*static*/ void CrossLoaderAllocatorHashNoRemove<TRAITS>::DeleteEntryTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe)
+/*static*/ void CrossLoaderAllocatorHash<TRAITS>::DeleteEntryTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe)
 {
     CONTRACTL
     {
@@ -655,7 +655,7 @@ template <class TRAITS>
 
 #ifndef CROSSGEN_COMPILE
 template <class TRAITS>
-void CrossLoaderAllocatorHashNoRemove<TRAITS>::EnsureManagedObjectsInitted()
+void CrossLoaderAllocatorHash<TRAITS>::EnsureManagedObjectsInitted()
 {
     CONTRACTL
     {
@@ -681,7 +681,7 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::EnsureManagedObjectsInitted()
 
 #ifndef CROSSGEN_COMPILE
 template <class TRAITS>
-LAHASHDEPENDENTHASHTRACKERREF CrossLoaderAllocatorHashNoRemove<TRAITS>::GetDependentTrackerForLoaderAllocator(LoaderAllocator* pLoaderAllocator)
+LAHASHDEPENDENTHASHTRACKERREF CrossLoaderAllocatorHash<TRAITS>::GetDependentTrackerForLoaderAllocator(LoaderAllocator* pLoaderAllocator)
 {
     struct 
     {
@@ -719,7 +719,7 @@ LAHASHDEPENDENTHASHTRACKERREF CrossLoaderAllocatorHashNoRemove<TRAITS>::GetDepen
 
 #ifndef CROSSGEN_COMPILE
 template <class TRAITS>
-GCHEAPHASHOBJECTREF CrossLoaderAllocatorHashNoRemove<TRAITS>::GetKeyToValueCrossLAHash(TKey key, LoaderAllocator* pValueLoaderAllocator)
+GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHash(TKey key, LoaderAllocator* pValueLoaderAllocator)
 {
     CONTRACTL
     {
