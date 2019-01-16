@@ -86,6 +86,7 @@ private:
 
 public:
 
+#ifndef DACCESS_COMPILE
     // Add an entry to the CrossLoaderAllocatorHashNoRemove
     // key must implement GetLoaderAllocator()
     void Add(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue);
@@ -93,6 +94,10 @@ public:
     // Add an entry to the CrossLoaderAllocatorHashNoRemove
     // key must implement GetLoaderAllocator()
     void Remove(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue);
+
+    // Remove all entries that can be looked up by key
+    void RemoveAll(TKey key);
+#endif
 
     // Using visitor walk all values associated with a given key. The visitor
     // is expected to implement bool operator ()(OBJECTREF keepAlive, TValue value)
@@ -174,6 +179,30 @@ private:
             return VisitTracker(_key, dependentTracker, *_pVisitor);
         }
     };
+
+#ifndef DACCESS_COMPILE
+    class DeleteIndividualEntryKeyValueHash
+    {
+        public:
+        TKey _key;
+        GCHeapHashDependentHashTrackerHash *_pDependentTrackerHash;
+
+        DeleteIndividualEntryKeyValueHash(TKey key, GCHeapHashDependentHashTrackerHash *pDependentTrackerHash) : 
+            _key(key),
+            _pDependentTrackerHash(pDependentTrackerHash)
+            {}
+
+        bool operator()(INT32 index)
+        {
+            WRAPPER_NO_CONTRACT;
+
+            LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
+            _pDependentTrackerHash->GetElement(index, dependentTracker);
+            DeleteEntryTracker(_key, dependentTracker);
+            return true;
+        }
+    };
+#endif // !DACCESS_COMPILE
 #endif // !CROSSGEN_COMPILE
 
 #ifndef CROSSGEN_COMPILE
@@ -182,6 +211,7 @@ private:
     GCHEAPHASHOBJECTREF GetKeyToValueCrossLAHash(TKey key, LoaderAllocator* pValueLoaderAllocator);
     template <class Visitor>
     static bool VisitTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor);
+    static void DeleteEntryTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe);
 #endif // !CROSSGEN_COMPILE
 
 private:
