@@ -12,10 +12,31 @@
 class LoaderAllocator;
 
 template <class TKey_, class TValue_>
-class DefaultCrossLoaderAllocatorHashTraits
+class NoRemoveDefaultCrossLoaderAllocatorHashTraits
 {
+public:
     typedef typename TKey_ TKey;
     typedef typename TValue_ TValue;
+    typedef SArray<TValue> TLALocalValueStore;
+
+#ifndef DACCESS_COMPILE
+    static void AddToValues(SArray<TValue> *pValues, const TValue& value);
+#ifndef CROSSGEN_COMPILE
+    static void AddToValuesInHeapMemory(OBJECTREF &keyValueStore, OBJECTREF &newKeyValueStore, const TKey& key, const TValue& value);
+#endif // !CROSSGEN_COMPILE
+#endif //!DACCESS_COMPILE
+};
+
+template <class TKey_, class TValue_>
+class DefaultCrossLoaderAllocatorHashTraits : public NoRemoveDefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>
+{
+public:
+#ifndef DACCESS_COMPILE
+    static void DeleteValue(SArray<TValue> *pValues, const TValue& value);
+#ifndef CROSSGEN_COMPILE
+    static void DeleteValueInHeapMemory(OBJECTREF keyValueStore, const TValue& value);
+#endif // !CROSSGEN_COMPILE
+#endif //!DACCESS_COMPILE
 };
 
 #ifndef CROSSGEN_COMPILE
@@ -44,11 +65,11 @@ struct GCHeapHashKeyToDependentTrackersHashTraits : public DefaultGCHeapHashTrai
 typedef GCHeapHash<GCHeapHashKeyToDependentTrackersHashTraits> GCHeapHashKeyToDependentTrackersHash;
 #endif // !CROSSGEN_COMPILE
 
-template <class TKey, class TValue>
+template <class TKey, class TValue, class TLALocalValueStore>
 struct WithinLoaderAllocatorData
 {
     mutable TKey _key;
-    mutable SArray<TValue> _values;
+    mutable TLALocalValueStore _values;
 };
 
 // Hashtable of pointer to pointer where the key may live in a different loader allocator than the value
@@ -59,12 +80,19 @@ class CrossLoaderAllocatorHashNoRemove
 private:
     typedef typename TRAITS::TKey TKey;
     typedef typename TRAITS::TValue TValue;
+    typedef typename TRAITS::TLALocalValueStore TLALocalValueStore;
+
+    typedef typename WithinLoaderAllocatorData<TKey, TValue, TLALocalValueStore> WithinLoaderAllocatorDataStruct;
 
 public:
 
     // Add an entry to the CrossLoaderAllocatorHashNoRemove
     // key must implement GetLoaderAllocator()
     void Add(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue);
+
+    // Add an entry to the CrossLoaderAllocatorHashNoRemove
+    // key must implement GetLoaderAllocator()
+    void Remove(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue);
 
     // Using visitor walk all values associated with a given key. The visitor
     // is expected to implement bool operator ()(OBJECTREF keepAlive, TValue value)
@@ -78,15 +106,15 @@ public:
     void Init(LoaderAllocator *pAssociatedLoaderAllocator);
 
 private:
-    class WithinLoaderAllocatorDataHashTraits : public DeleteElementsOnDestructSHashTraits<NoRemoveSHashTraits<DefaultSHashTraits<WithinLoaderAllocatorData<TKey, TValue>>>>
+    class WithinLoaderAllocatorDataHashTraits : public DeleteElementsOnDestructSHashTraits<NoRemoveSHashTraits<DefaultSHashTraits<WithinLoaderAllocatorDataStruct>>>
     {
     public:
-        typedef DeleteElementsOnDestructSHashTraits<NoRemoveSHashTraits<DefaultSHashTraits<WithinLoaderAllocatorData<TKey, TValue>>>> Base;
+        typedef DeleteElementsOnDestructSHashTraits<NoRemoveSHashTraits<DefaultSHashTraits<WithinLoaderAllocatorDataStruct>>> Base;
         typedef COUNT_T count_t;
 
         typedef TKey key_t;
 
-        void OnDestructPerEntryCleanupAction(const WithinLoaderAllocatorData<TKey, TValue> & elem)
+        void OnDestructPerEntryCleanupAction(const WithinLoaderAllocatorDataStruct & elem)
         {
             WRAPPER_NO_CONTRACT;
 
@@ -95,7 +123,7 @@ private:
         }
         static const bool s_DestructPerEntryCleanupAction = true;
 
-        static key_t GetKey(const WithinLoaderAllocatorData<TKey, TValue> &e)
+        static key_t GetKey(const WithinLoaderAllocatorDataStruct &e)
         {
             LIMITED_METHOD_CONTRACT;
             return (key_t)((INT_PTR)e._key & ~1);
@@ -113,8 +141,8 @@ private:
             return (count_t)((size_t)dac_cast<TADDR>(k) >> 2);
         }
 
-        static const WithinLoaderAllocatorData<TKey, TValue> Null() { LIMITED_METHOD_CONTRACT; WithinLoaderAllocatorData<TKey, TValue> nullValue = {0}; return nullValue; }
-        static bool IsNull(const WithinLoaderAllocatorData<TKey, TValue> &e) { LIMITED_METHOD_CONTRACT; return e._key == nullptr; }
+        static const WithinLoaderAllocatorDataStruct Null() { LIMITED_METHOD_CONTRACT; WithinLoaderAllocatorDataStruct nullValue = {0}; return nullValue; }
+        static bool IsNull(const WithinLoaderAllocatorDataStruct &e) { LIMITED_METHOD_CONTRACT; return e._key == nullptr; }
     };
 
     typedef SHash<WithinLoaderAllocatorDataHashTraits> WithinLoaderAllocatorDataHash;

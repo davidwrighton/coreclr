@@ -26,12 +26,12 @@
 #define STUBMANAGER_RANGELIST(stubManager) (NULL)
 #endif
 
+#include "crossloaderallocatorhash.h"
+#include "crossloaderallocatorhash.inl"
 void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, MethodTable *pMTOther)
 {
-    struct SomeTraits
+    struct SomeTraits : NoRemoveDefaultCrossLoaderAllocatorHashTraits<MethodTable *, void *>
     {
-        typedef MethodTable *TKey;
-        typedef void *TValue;
     };
     CrossLoaderAllocatorHashNoRemove<SomeTraits> laHash;
 
@@ -40,6 +40,18 @@ void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, Me
 #endif
 
     laHash.VisitValuesOfKey(pMT, [](OBJECTREF obj, void *pVisit) { return (pVisit != NULL);});
+
+    struct SomeTraits2 : DefaultCrossLoaderAllocatorHashTraits<MethodTable *, void *>
+    {
+    };
+    CrossLoaderAllocatorHashNoRemove<SomeTraits2> laHash2;
+
+#ifndef DACCESS_COMPILE
+    laHash2.Add(pMT, pMTOther, pMTOther->GetLoaderAllocator());
+    laHash2.Remove(pMT, pMTOther, pMTOther->GetLoaderAllocator());
+#endif
+
+    laHash2.VisitValuesOfKey(pMT, [](OBJECTREF obj, void *pVisit) { return (pVisit != NULL);});
 
 #ifndef CROSSGEN_COMPILE
     GCHeapHash<GCHeapHashTraitsPointerToPointerList<int*, false>> hash(gcheap);

@@ -10,6 +10,119 @@
 #include "gcheaphashtable.inl"
 #endif // !CROSSGEN_COMPILE
 
+#ifndef DACCESS_COMPILE
+template <class TKey_, class TValue_>
+/*static*/ void NoRemoveDefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::AddToValues(SArray<TValue> *pValues, const TValue& value)
+{
+    pValues->Append(value);
+}
+
+#ifndef CROSSGEN_COMPILE
+template <class TKey_, class TValue_>
+/*static*/ void NoRemoveDefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::AddToValuesInHeapMemory(OBJECTREF &keyValueStore, OBJECTREF &newKeyValueStore, const TKey& key, const TValue& value)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    if (keyValueStore == NULL)
+    {
+        newKeyValueStore = AllocatePrimitiveArray(ELEMENT_TYPE_U, 3, FALSE);
+        ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[0] = (UINT_PTR)key;
+        ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[1] = (UINT_PTR)1;
+        ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[2] = (UINT_PTR)value;
+    }
+    else
+    {
+        DWORD usedEntries = ((DWORD)((UPTRARRAYREF)keyValueStore)->GetDirectPointerToNonObjectElements()[1]) + 2;
+        if (usedEntries <((UPTRARRAYREF)keyValueStore)->GetNumComponents())
+        {
+            // There isn't free space. Build a new, bigger array with the existing data 
+            DWORD newSize = usedEntries * 2;
+            if (newSize < usedEntries)
+                COMPlusThrow(kOverflowException);
+
+            newKeyValueStore = AllocatePrimitiveArray(ELEMENT_TYPE_U, newSize, FALSE);
+            for (DWORD i = 0; i < usedEntries; i++)
+            {
+                ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[i] = ((UPTRARRAYREF)keyValueStore)->GetDirectPointerToNonObjectElements()[i];
+            }
+
+            keyValueStore = newKeyValueStore;
+        }
+
+        // There is free space. Append on the end
+        ((UPTRARRAYREF)keyValueStore)->GetDirectPointerToNonObjectElements()[1] = usedEntries + 1;
+        ((UPTRARRAYREF)keyValueStore)->GetDirectPointerToNonObjectElements()[usedEntries] = (UINT_PTR)value;
+    }
+}
+#endif // !CROSSGEN_COMPILE
+#endif //!DACCESS_COMPILE
+
+#ifndef DACCESS_COMPILE
+template <class TKey_, class TValue_>
+/*static*/ void DefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::DeleteValue(SArray<TValue> *pValues, const TValue& value)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    // TODO: Consider optimizing this by changing the add to ensure that the 
+    // values list is sorted, and then doing a binary search for the value instead
+    // of the linear search
+    auto begin = pValues->Begin();
+    auto end = pValues->End();
+
+    for (auto i = begin; i != end; ++i)
+    {
+        if (*i == value)
+        {
+            pValues->Delete(i);
+            return;
+        }
+    }
+
+    return;
+}
+
+#ifndef CROSSGEN_COMPILE
+template <class TKey_, class TValue_>
+/*static*/ void DefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::DeleteValueInHeapMemory(OBJECTREF keyValueStore, const TValue& value)
+{
+    LIMITED_METHOD_CONTRACT;
+
+    // TODO: Consider optimizing this by changing the add to ensure that the 
+    // values list is sorted, and then doing a binary search for the value instead
+    // of the linear search
+
+    UINT_PTR *dataInUptrArray = ((UPTRARRAYREF)keyValueStore)->GetDirectPointerToNonObjectElements();
+
+    DWORD usedEntries = ((DWORD)dataInUptrArray[1]) + 2;
+
+    DWORD foundEntry = 0xFFFFFFFF;
+    UINT_PTR ptrToSearchFor = (UINT_PTR)value;
+
+    for (DWORD iEntry = 2; iEntry < usedEntries; iEntry++)
+    {
+        if (dataInUptrArray[iEntry] == ptrToSearchFor)
+        {
+            memmove(dataInUptrArray + iEntry, dataInUptrArray + iEntry + 1, (usedEntries - iEntry - 1) * sizeof(UINT_PTR));
+            dataInUptrArray[1] = usedEntries - 3;
+            return;
+        }
+    }
+}
+#endif // !CROSSGEN_COMPILE
+#endif //!DACCESS_COMPILE
+
 #ifndef CROSSGEN_COMPILE
 /*static*/ inline INT32 GCHeapHashDependentHashTrackerHashTraits::Hash(PtrTypeKey *pValue)
 {
@@ -158,11 +271,11 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::Add(TKey key, TValue value, Loade
 
     // Get pointer to key data in SHash used for non-LA crossing data.
 
-    const WithinLoaderAllocatorData<TKey, TValue>* pAssociatedWithKeyData = (WithinLoaderAllocatorData<TKey, TValue>*)_withinLAHash.LookupPtr(key);
+    const WithinLoaderAllocatorDataStruct* pAssociatedWithKeyData = (WithinLoaderAllocatorDataStruct*)_withinLAHash.LookupPtr(key);
     if (pAssociatedWithKeyData == NULL)
     {
         // If non-LA crossing data structure doesn't exist, add it, and then capture current pointer
-        WithinLoaderAllocatorData<TKey, TValue> newValue;
+        WithinLoaderAllocatorDataStruct newValue;
         newValue._key = key;
         _withinLAHash.Add(newValue);
         pAssociatedWithKeyData = _withinLAHash.LookupPtr(key);
@@ -173,7 +286,7 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::Add(TKey key, TValue value, Loade
     if (_loaderAllocator == pLoaderAllocatorOfValue)
 #endif //!CROSSGEN_COMPILE
     {
-        pAssociatedWithKeyData->_values.Append(value);
+        TRAITS::AddToValues(&pAssociatedWithKeyData->_values, value);
     }
 #ifndef CROSSGEN_COMPILE
     else
@@ -186,8 +299,9 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::Add(TKey key, TValue value, Loade
 
         struct {
             KeyToValuesGCHeapHash keyToValuePerLAHash;
-            UPTRARRAYREF keyValueStore;
-            UPTRARRAYREF newKeyValueStore;
+            OBJECTREF keyValueStore;
+            OBJECTREF newKeyValueStore;
+            OBJECTREF objRefNull;
         } gc;
 
         ZeroMemory(&gc, sizeof(gc));
@@ -201,42 +315,81 @@ void CrossLoaderAllocatorHashNoRemove<TRAITS>::Add(TKey key, TValue value, Loade
             {
                 gc.keyToValuePerLAHash.GetElement(indexInKeyValueHash, gc.keyValueStore);
 
-                _ASSERTE(gc.keyValueStore->GetDirectPointerToNonObjectElements()[0] == (UINT_PTR)key);
+                TRAITS::AddToValuesInHeapMemory(gc.keyValueStore, gc.newKeyValueStore, key, value);
 
-                // We now have the keyValueStore. Check to see if there is free space within it
-                DWORD usedEntries = ((DWORD)gc.keyValueStore->GetDirectPointerToNonObjectElements()[1]) + 2;
-                if (usedEntries < gc.keyValueStore->GetNumComponents())
+                if (gc.newKeyValueStore != NULL)
                 {
-                    // There isn't free space. Build a new, bigger array with the existing data 
-                    DWORD newSize = usedEntries * 2;
-                    if (newSize < usedEntries)
-                        COMPlusThrow(kOverflowException);
-
-                    gc.newKeyValueStore = (UPTRARRAYREF)AllocatePrimitiveArray(ELEMENT_TYPE_U, newSize, FALSE);
-                    for (DWORD i = 0; i < usedEntries; i++)
-                    {
-                        gc.newKeyValueStore->GetDirectPointerToNonObjectElements()[i] = gc.keyValueStore->GetDirectPointerToNonObjectElements()[i];
-                    }
-
                     gc.keyToValuePerLAHash.SetElement(indexInKeyValueHash, gc.newKeyValueStore);
-                    gc.keyValueStore = gc.newKeyValueStore;
                 }
-
-                // There is free space. Append on the end
-                gc.keyValueStore->GetDirectPointerToNonObjectElements()[1] = usedEntries + 1;
-                gc.keyValueStore->GetDirectPointerToNonObjectElements()[usedEntries] = (UINT_PTR)value;
             }
             else
             {
-                gc.keyValueStore = (UPTRARRAYREF)AllocatePrimitiveArray(ELEMENT_TYPE_U, 3, FALSE);
-                gc.keyValueStore->GetDirectPointerToNonObjectElements()[0] = (UINT_PTR)key;
-                gc.keyValueStore->GetDirectPointerToNonObjectElements()[1] = (UINT_PTR)1;
-                gc.keyValueStore->GetDirectPointerToNonObjectElements()[2] = (UINT_PTR)value;
+                TRAITS::AddToValuesInHeapMemory(gc.objRefNull, gc.newKeyValueStore, key, value);
 
                 gc.keyToValuePerLAHash.Add(&key, [&gc](PTRARRAYREF arr, INT32 index)
                 {
-                    arr->SetAt(index, (OBJECTREF)gc.keyValueStore);
+                    arr->SetAt(index, gc.keyValueStore);
                 });
+            }
+        }
+        GCPROTECT_END();
+    }
+#endif // !CROSSGEN_COMPILE
+}
+
+template <class TRAITS>
+void CrossLoaderAllocatorHashNoRemove<TRAITS>::Remove(TKey key, TValue value, LoaderAllocator *pLoaderAllocatorOfValue)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    // This data structure actually doesn't have this invariant, but it is expected that uses of this
+    // data structure will require that the key's loader allocator is the same as that of this data structure.
+    _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
+
+    // Get pointer to key data in SHash used for non-LA crossing data.
+
+    const WithinLoaderAllocatorDataStruct* pAssociatedWithKeyData = (WithinLoaderAllocatorDataStruct*)_withinLAHash.LookupPtr(key);
+    if (pAssociatedWithKeyData == NULL)
+    {
+        // If non-LA crossing data structure doesn't exist, then the value isn't present. Simply return.
+        return;
+    }
+
+    // Check to see if value can be added to this data structure directly.
+#ifndef CROSSGEN_COMPILE
+    if (_loaderAllocator == pLoaderAllocatorOfValue)
+#endif //!CROSSGEN_COMPILE
+    {
+        TRAITS::DeleteValue(&pAssociatedWithKeyData->_values, value);
+    }
+#ifndef CROSSGEN_COMPILE
+    else
+    {
+        // Must remove it from the cross LA structure
+        GCHEAPHASHOBJECTREF gcheapKeyToValue = GetKeyToValueCrossLAHash(key, pLoaderAllocatorOfValue);
+
+        struct {
+            KeyToValuesGCHeapHash keyToValuePerLAHash;
+            OBJECTREF keyValueStore;
+        } gc;
+
+        ZeroMemory(&gc, sizeof(gc));
+
+        gc.keyToValuePerLAHash = KeyToValuesGCHeapHash(gcheapKeyToValue);
+
+        GCPROTECT_BEGIN(gc)
+        {
+            INT32 indexInKeyValueHash = gc.keyToValuePerLAHash.GetValueIndex(&key);
+            if (indexInKeyValueHash != -1)
+            {
+                gc.keyToValuePerLAHash.GetElement(indexInKeyValueHash, gc.keyValueStore);
+                TRAITS::DeleteValueInHeapMemory(gc.keyValueStore, value);
             }
         }
         GCPROTECT_END();
@@ -262,7 +415,7 @@ bool CrossLoaderAllocatorHashNoRemove<TRAITS>::VisitValuesOfKey(TKey key, Visito
 
     // Get pointer to key data in SHash used for non-LA crossing data.
 
-    const WithinLoaderAllocatorData<TKey, TValue>* pAssociatedWithKeyData = _withinLAHash.LookupPtr(key);
+    const WithinLoaderAllocatorDataStruct* pAssociatedWithKeyData = _withinLAHash.LookupPtr(key);
     if (pAssociatedWithKeyData == NULL)
         return true;
 
