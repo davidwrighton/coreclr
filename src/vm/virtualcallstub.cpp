@@ -125,11 +125,11 @@ UINT32 g_dumpLogIncr;
 //@TODO: use the existing logging mechanisms.  for now we write to a file.
 HANDLE g_hStubLogFile;
 
-bool IsInterfaceDirectCallableGivenCallAttempt(MethodTable *pInterfaceMTToDispatchTo)
+bool IsInterfaceDirectCallableGivenCallAttempt(MethodTable *pMTObject, MethodTable *pInterfaceMTToDispatchTo)
 {
     _ASSERTE(pInterfaceMTToDispatchTo->HasDerivedType() || 
             pInterfaceMTToDispatchTo->HasMultipleDerivedTypes());
-    return !pInterfaceMTToDispatchTo->HasMultipleDerivedTypes();
+    return !pInterfaceMTToDispatchTo->HasMultipleDerivedTypes() && (pMTObject->GetLoaderAllocator() == pInterfaceMTToDispatchTo->GetLoaderAllocator());
 }
 
 MethodTable *TokenToDevirtualizableMethodTable(DispatchToken token)
@@ -1789,13 +1789,15 @@ void BackPatchWorkerStaticStub(PCODE returnAddr, TADDR siteAddrForRegisterIndire
 class CheckAddDevirtFunctor
 {
     VirtualCallStubManager *m_stubManager;
+    MethodTable *m_pMTObject;
     MethodTable *m_pInterfaceMTToDispatchTo;
     StubCallSite* m_pCallSite;
     PCODE m_stub;
 
 public:
-    CheckAddDevirtFunctor(VirtualCallStubManager *stubManager, MethodTable *pInterfaceMTToDispatchTo, StubCallSite* pCallSite, PCODE stub) :
+    CheckAddDevirtFunctor(VirtualCallStubManager *stubManager, MethodTable *pMTObject, MethodTable *pInterfaceMTToDispatchTo, StubCallSite* pCallSite, PCODE stub) :
         m_stubManager(stubManager),
+        m_pMTObject(pMTObject),
         m_pInterfaceMTToDispatchTo(pInterfaceMTToDispatchTo),
         m_pCallSite(pCallSite),
         m_stub(stub)
@@ -1806,7 +1808,7 @@ public:
     {
         if (m_pInterfaceMTToDispatchTo != NULL)
         {
-            if (IsInterfaceDirectCallableGivenCallAttempt(m_pInterfaceMTToDispatchTo))
+            if (IsInterfaceDirectCallableGivenCallAttempt(m_pMTObject, m_pInterfaceMTToDispatchTo))
             {
                 m_stubManager->BackPatchSite(m_pCallSite, m_stub, true); 
                 return true;
@@ -2079,7 +2081,7 @@ PCODE VirtualCallStubManager::ResolveWorker(StubCallSite* pCallSite,
 
                         if (pInterfaceMTToDispatchTo != NULL)
                         {
-                            if (IsInterfaceDirectCallableGivenCallAttempt(pInterfaceMTToDispatchTo))
+                            if (IsInterfaceDirectCallableGivenCallAttempt(objectType, pInterfaceMTToDispatchTo))
                             {
                                 stub = target;
                             }
@@ -2244,7 +2246,7 @@ PCODE VirtualCallStubManager::ResolveWorker(StubCallSite* pCallSite,
             {
                 if (stub == target)
                 {
-                    pInterfaceMTToDispatchTo->GetLoaderAllocator()->CheckAndAddToDevirtVSDTable(pInterfaceMTToDispatchTo, pCallSite->GetIndirectCell(), pCallSite->GetSiteTarget(), CheckAddDevirtFunctor(this, pInterfaceMTToDispatchTo, pCallSite, (PCODE)stub));
+                    pInterfaceMTToDispatchTo->GetLoaderAllocator()->CheckAndAddToDevirtVSDTable(pInterfaceMTToDispatchTo, pCallSite->GetIndirectCell(), pCallSite->GetSiteTarget(), CheckAddDevirtFunctor(this, objectType, pInterfaceMTToDispatchTo, pCallSite, (PCODE)stub));
                 }
                 else
                 {
