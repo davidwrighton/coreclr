@@ -178,9 +178,6 @@ LoaderAllocator::~LoaderAllocator()
 #if !defined(DACCESS_COMPILE) && !defined(CROSSGEN_COMPILE)
     Terminate();
 
-    // This info is cleaned up before the virtual call stub manager is uninitialized
-    _ASSERTE(!GetMethodDescBackpatchInfoTracker()->HasDependencyMethodDescEntryPointSlots());
-
     // Assert that VSD is not still active when the destructor is called.
     _ASSERTE(m_pVirtualCallStubManager == NULL);
 
@@ -716,11 +713,6 @@ void LoaderAllocator::GCLoaderAllocators(LoaderAllocator* pOriginalLoaderAllocat
 
         pDomainLoaderAllocatorDestroyIterator->ReleaseManagedAssemblyLoadContext();
 
-        // Recorded entry point slots may point into the virtual call stub manager's heaps, so clear it first
-        pDomainLoaderAllocatorDestroyIterator
-            ->GetMethodDescBackpatchInfoTracker()
-            ->ClearDependencyMethodDescEntryPointSlots(pDomainLoaderAllocatorDestroyIterator);
-
         // The following code was previously happening on delete ~DomainAssembly->Terminate
         // We are moving this part here in order to make sure that we can unload a LoaderAllocator
         // that didn't have a DomainAssembly
@@ -1188,6 +1180,7 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
 
 #ifndef CROSSGEN_COMPILE
     m_derivedTypesCrossLA.Init(this);
+    m_methodDescBackpatchInfoTracker.Initialize(this);
 #endif
 
     //
