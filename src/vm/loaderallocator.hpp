@@ -175,6 +175,14 @@ class LoaderAllocator
     };
     typedef SHash<InterfaceImplementingTypeTableTraits> InterfaceToImplmentingTypeTable;
 
+#ifndef CROSSGEN_COMPILE
+    class DerivedMethodTableTraitsCrossLA : public NoRemoveDefaultCrossLoaderAllocatorHashTraits<MethodTable *, MethodTable *>
+    {
+    };
+
+    typedef CrossLoaderAllocatorHash<DerivedMethodTableTraitsCrossLA> TypeToDerivedTypeTableCrossLA;
+#endif // !CROSSGEN_COMPILE
+
     struct DevirtualizedVSDLookup
     {
         MethodTable *m_pType;
@@ -251,6 +259,9 @@ protected:
     
     // Per LoaderAllocator stored type system structures
     TypeToDerivedTypeTable m_derivedTypes;
+#ifndef CROSSGEN_COMPILE
+    TypeToDerivedTypeTableCrossLA m_derivedTypesCrossLA;
+#endif
     InterfaceToImplmentingTypeTable m_interfaceImplementations;
     DevirtualizedVSDLookupTable m_devirtVSD;
 
@@ -738,37 +749,24 @@ public:
         CONTRACTL
         {
             THROWS;
-            MODE_COOPERATIVE;
-            GC_NOTRIGGER;
+            MODE_ANY;
+            GC_TRIGGERS;
         }
         CONTRACTL_END;
 
         _ASSERTE(MTGetLoaderAllocator(pMT) == this);
 
-        if (!WalkDerivingAndImplementingMethodTables_Worker(pMT, lambda))
+        if (MTHasDerivedType(pMT))
         {
-            return false;
-        }
-
-        if (MTHasDerivedTypeInOtherLoaderAllocator(pMT))
-        {
+            GCX_COOP();
             CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
-            auto iterActiveLoaderAllocators = s_activeLoaderAllocators->Begin();
-            auto iterActiveLoaderAllocatorsEnd = s_activeLoaderAllocators->End();
-            for (;iterActiveLoaderAllocators != iterActiveLoaderAllocatorsEnd; ++iterActiveLoaderAllocators)
-            {
-                if ((*iterActiveLoaderAllocators) == this)
-                    continue;
 
-                LoaderAllocator *pOtherAllocator = *iterActiveLoaderAllocators;
-                if (!pOtherAllocator->WalkDerivingAndImplementingMethodTables_Worker(pMT, lambda))
-                {
-                    return false;
-                }
-            }
+            return !WalkDerivingAndImplementingMethodTables_Worker(pMT, lambda);
         }
-
-        return true;
+        else
+        {
+            return true;
+        }
     }
 
 private:
@@ -779,14 +777,12 @@ private:
         {
             THROWS;
             MODE_COOPERATIVE;
-            GC_NOTRIGGER;
+            GC_TRIGGERS;
         }
         CONTRACTL_END;
 
         if (MTHasDerivedType(pMT))
         {
-            CrstHolder ch(&m_crstLoaderAllocator);
-
             if (pMT->IsInterface())
             {
                 auto iterSearchImplementingTypesOfpMT = m_interfaceImplementations.Begin(pMT);
@@ -815,6 +811,18 @@ private:
                         return false;
                 }
             }
+#ifndef CROSSGEN_COMPILE
+            if (MTHasDerivedTypeInOtherLoaderAllocator(pMT))
+            {
+                return m_derivedTypesCrossLA.VisitValuesOfKey(pMT, [&lambda](OBJECTREF obj, MethodTable *pBaseType, MethodTable *pMoreDerivedType)
+                {
+                    if (!lambda(pMoreDerivedType))
+                        return false;
+
+                    return pMoreDerivedType->GetLoaderAllocator()->WalkDerivingAndImplementingMethodTables_Worker(pMoreDerivedType, lambda);
+                });
+            }
+#endif // !CROSSGEN_COMPILE
         }
 
         return true;

@@ -1186,6 +1186,10 @@ void LoaderAllocator::Init(BaseDomain *pDomain, BYTE *pExecutableHeapMemory)
     m_ComCallWrapperCrst.Init(CrstCOMCallWrapper);
 #endif
 
+#ifndef CROSSGEN_COMPILE
+    m_derivedTypesCrossLA.Init(this);
+#endif
+
     //
     // Initialize the heaps
     //
@@ -2261,7 +2265,7 @@ void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pD
 #ifndef DACCESS_COMPILE
     GCX_COOP();
 
-    CrstHolder ch(&m_crstLoaderAllocator);
+    CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
 
     // The first type to derive from an interface, and all types deriving from concrete types are
     // added to the derivation tables. The first Type to Add check may race with other checks for interfaces
@@ -2270,19 +2274,29 @@ void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pD
     if (!pBaseType->IsInterface() || firstTypeToAdd)
     {
         _ASSERTE(!pDerivedOrImplementingType->IsInterface());
-        _ASSERTE(pDerivedOrImplementingType->GetLoaderAllocator() == this);
+        _ASSERTE(pBaseType->GetLoaderAllocator() == this);
 
-        if (!pBaseType->IsInterface())
+        _ASSERTE(pBaseType->IsInterface() || pDerivedOrImplementingType->GetParentMethodTable() == pBaseType);
+        if (pDerivedOrImplementingType->GetLoaderAllocator() == this)
         {
-            _ASSERTE(pDerivedOrImplementingType->GetParentMethodTable() == pBaseType);
-            m_derivedTypes.Add(pDerivedOrImplementingType);
+            if (!pBaseType->IsInterface())
+            {
+                _ASSERTE(pDerivedOrImplementingType->GetParentMethodTable() == pBaseType);
+                m_derivedTypes.Add(pDerivedOrImplementingType);
+            }
+            else
+            {
+                InterfaceTypeToImplementingTypeEntry entry;
+                entry.m_pInterfaceType = pBaseType;
+                entry.m_pImplementingType = pDerivedOrImplementingType;
+                m_interfaceImplementations.Add(entry);
+            }
         }
         else
         {
-            InterfaceTypeToImplementingTypeEntry entry;
-            entry.m_pInterfaceType = pBaseType;
-            entry.m_pImplementingType = pDerivedOrImplementingType;
-            m_interfaceImplementations.Add(entry);
+#ifndef CROSSGEN_COMPILE
+            m_derivedTypesCrossLA.Add(pBaseType, pDerivedOrImplementingType, pDerivedOrImplementingType->GetLoaderAllocator());
+#endif
         }
     }
 #endif // DACCESS_COMPILE
@@ -2405,8 +2419,6 @@ MethodTable* LoaderAllocator::FindUniqueConcreteTypeWhichImplementsThisInterface
 
     // Walk derived types, and stop walking and report null if multiple concrete derived types are found.
     MethodTable *pUniqueType = nullptr;
-
-    GCX_COOP();
 
     if (!WalkDerivingAndImplementingMethodTables(pInterfaceType, [&pUniqueType](MethodTable *pDerivedMethodTable)
     {                

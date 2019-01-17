@@ -10371,7 +10371,7 @@ void MethodTableWriteableData::DeclareDerivedType(MethodTable *thisType, MethodT
 
     bool repeat = true;
 
-    otherType->GetLoaderAllocator()->AddDerivedTypeInfo(thisType, otherType, !(initialFlags & enum_flag_DerivedType));
+    thisType->GetLoaderAllocator()->AddDerivedTypeInfo(thisType, otherType, !(initialFlags & enum_flag_DerivedType));
 
     while(repeat)
     {
