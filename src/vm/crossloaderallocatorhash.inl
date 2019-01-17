@@ -482,7 +482,7 @@ bool CrossLoaderAllocatorHash<TRAITS>::VisitValuesOfKey(TKey key, Visitor &visit
 
 template <class TRAITS>
 template <class Visitor>
-bool CrossLoaderAllocatorHash<TRAITS>::VisitAllKeyValuePairs(TKey key, Visitor &visitor)
+bool CrossLoaderAllocatorHash<TRAITS>::VisitAllKeyValuePairs(Visitor &visitor)
 {
     CONTRACTL
     {
