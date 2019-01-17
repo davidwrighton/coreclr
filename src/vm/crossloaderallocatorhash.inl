@@ -5,19 +5,11 @@
 #ifndef CROSSLOADERALLOCATORHASH_INL
 #define CROSSLOADERALLOCATORHASH_INL
 #ifdef CROSSLOADERALLOCATORHASH_H
-
 #ifndef CROSSGEN_COMPILE
+
 #include "gcheaphashtable.inl"
-#endif // !CROSSGEN_COMPILE
 
 #ifndef DACCESS_COMPILE
-template <class TKey_, class TValue_>
-/*static*/ void NoRemoveDefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::AddToValues(SArray<TValue> *pValues, const TValue& value)
-{
-    pValues->Append(value);
-}
-
-#ifndef CROSSGEN_COMPILE
 template <class TKey_, class TValue_>
 /*static*/ void NoRemoveDefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::AddToValuesInHeapMemory(OBJECTREF &keyValueStore, OBJECTREF &newKeyValueStore, const TKey& key, const TValue& value)
 {
@@ -31,12 +23,15 @@ template <class TKey_, class TValue_>
 
     if (keyValueStore == NULL)
     {
-        newKeyValueStore = AllocatePrimitiveArray(ELEMENT_TYPE_U, 3, FALSE);
+        newKeyValueStore = AllocatePrimitiveArray(ELEMENT_TYPE_U, (value == NULL) ? 2 : 3, FALSE);
         ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[0] = (UINT_PTR)key;
         ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[1] = (UINT_PTR)1;
-        ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[2] = (UINT_PTR)value;
+        if (value != NULL)
+        {
+            ((UPTRARRAYREF)newKeyValueStore)->GetDirectPointerToNonObjectElements()[2] = (UINT_PTR)value;
+        }
     }
-    else
+    else if (value != NULL)
     {
         DWORD usedEntries = ((DWORD)((UPTRARRAYREF)keyValueStore)->GetDirectPointerToNonObjectElements()[1]) + 2;
         if (usedEntries <((UPTRARRAYREF)keyValueStore)->GetNumComponents())
@@ -60,40 +55,9 @@ template <class TKey_, class TValue_>
         ((UPTRARRAYREF)keyValueStore)->GetDirectPointerToNonObjectElements()[usedEntries] = (UINT_PTR)value;
     }
 }
-#endif // !CROSSGEN_COMPILE
 #endif //!DACCESS_COMPILE
 
 #ifndef DACCESS_COMPILE
-template <class TKey_, class TValue_>
-/*static*/ void DefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::DeleteValue(SArray<TValue> *pValues, const TValue& value)
-{
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
-
-    // TODO: Consider optimizing this by changing the add to ensure that the 
-    // values list is sorted, and then doing a binary search for the value instead
-    // of the linear search
-    auto begin = pValues->Begin();
-    auto end = pValues->End();
-
-    for (auto i = begin; i != end; ++i)
-    {
-        if (*i == value)
-        {
-            pValues->Delete(i);
-            return;
-        }
-    }
-
-    return;
-}
-
-#ifndef CROSSGEN_COMPILE
 template <class TKey_, class TValue_>
 /*static*/ void DefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::DeleteValueInHeapMemory(OBJECTREF keyValueStore, const TValue& value)
 {
@@ -120,10 +84,8 @@ template <class TKey_, class TValue_>
         }
     }
 }
-#endif // !CROSSGEN_COMPILE
 #endif //!DACCESS_COMPILE
 
-#ifndef CROSSGEN_COMPILE
 /*static*/ inline INT32 GCHeapHashDependentHashTrackerHashTraits::Hash(PtrTypeKey *pValue)
 {
     LIMITED_METHOD_CONTRACT;
@@ -252,7 +214,6 @@ template<class TKey>
 
     return value->IsLoaderAllocatorLive();
 }
-#endif // !CROSSGEN_COMPILE
 
 #ifndef DACCESS_COMPILE
 template <class TRAITS>
@@ -266,51 +227,66 @@ void CrossLoaderAllocatorHash<TRAITS>::Add(TKey key, TValue value, LoaderAllocat
     }
     CONTRACTL_END;
 
-    // This data structure actually doesn't have this invariant, but it is expected that uses of this
-    // data structure will require that the key's loader allocator is the same as that of this data structure.
-    _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
+    EnsureManagedObjectsInitted();
 
-    // Get pointer to key data in SHash used for non-LA crossing data.
-
-    const WithinLoaderAllocatorDataStruct* pAssociatedWithKeyData = (WithinLoaderAllocatorDataStruct*)_withinLAHash.LookupPtr(key);
-    if (pAssociatedWithKeyData == NULL)
+    struct {
+        GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
+        KeyToValuesGCHeapHash keyToValuePerLAHash;
+        OBJECTREF keyValueStore;
+        OBJECTREF newKeyValueStore;
+        OBJECTREF objRefNull;
+        LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
+    } gc;
+    ZeroMemory(&gc, sizeof(gc));
+    GCPROTECT_BEGIN(gc)
     {
-        // If non-LA crossing data structure doesn't exist, add it, and then capture current pointer
-        WithinLoaderAllocatorDataStruct newValue;
-        newValue._key = key;
-        _withinLAHash.Add(newValue);
-        pAssociatedWithKeyData = _withinLAHash.LookupPtr(key);
-    }
+        bool addToKeyValuesHash = false;
+        // This data structure actually doesn't have this invariant, but it is expected that uses of this
+        // data structure will require that the key's loader allocator is the same as that of this data structure.
+        _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
 
-    // Check to see if value can be added to this data structure directly.
-#ifndef CROSSGEN_COMPILE
-    if (_loaderAllocator == pLoaderAllocatorOfValue)
-#endif //!CROSSGEN_COMPILE
-    {
-        TRAITS::AddToValues(&pAssociatedWithKeyData->_values, value);
-    }
-#ifndef CROSSGEN_COMPILE
-    else
-    {
-        // Must mark the assoacitedWithKeyData with the flag that indicates there are non-local entries
-        pAssociatedWithKeyData->_key = (TKey)((INT_PTR)pAssociatedWithKeyData->_key | 1);
+        gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
+        INT32 index = gc.keyToTrackersHash.GetValueIndex(&key);
 
-        // Must add it to the cross LA structure
-        GCHEAPHASHOBJECTREF gcheapKeyToValue = GetKeyToValueCrossLAHash(key, pLoaderAllocatorOfValue);
-
-        struct {
-            KeyToValuesGCHeapHash keyToValuePerLAHash;
-            OBJECTREF keyValueStore;
-            OBJECTREF newKeyValueStore;
-            OBJECTREF objRefNull;
-        } gc;
-
-        ZeroMemory(&gc, sizeof(gc));
-
-        gc.keyToValuePerLAHash = KeyToValuesGCHeapHash(gcheapKeyToValue);
-
-        GCPROTECT_BEGIN(gc)
+        if (index == -1)
         {
+            gc.hashKeyToTrackers = (LAHASHKEYTOTRACKERSREF)AllocateObject(MscorlibBinder::GetClass(CLASS__LAHASHKEYTOTRACKERS));
+            addToKeyValuesHash = true;
+            TRAITS::AddToValuesInHeapMemory(gc.keyValueStore, gc.newKeyValueStore, key, pLoaderAllocatorOfValue == _loaderAllocator ? value : NULL);
+            SetObjectReference(&gc.hashKeyToTrackers->_laLocalKeyValueStore, gc.newKeyValueStore, GetAppDomain());
+        }
+        else
+        {
+            gc.keyToTrackersHash.GetElement(index, gc.hashKeyToTrackers);
+            gc.keyValueStore = gc.hashKeyToTrackers->_laLocalKeyValueStore;
+        }
+
+        if ((pLoaderAllocatorOfValue == _loaderAllocator) && (gc.newKeyValueStore == NULL))
+        {
+            TRAITS::AddToValuesInHeapMemory(gc.keyValueStore, gc.newKeyValueStore, key, pLoaderAllocatorOfValue == _loaderAllocator ? value : NULL);
+        }
+
+        if (gc.newKeyValueStore != NULL)
+        {
+            SetObjectReference(&gc.hashKeyToTrackers->_laLocalKeyValueStore, gc.newKeyValueStore, GetAppDomain());
+        }
+
+        if (addToKeyValuesHash)
+        {
+            gc.keyToTrackersHash.Add(&key, [&gc](PTRARRAYREF arr, INT32 index)
+            {
+                arr->SetAt(index, (OBJECTREF)gc.hashKeyToTrackers);
+            });
+        }
+
+        // If the LoaderAllocator matches, we've finished adding by now, otherwise, we need to get the remove hash and work with that
+        if (pLoaderAllocatorOfValue != _loaderAllocator)
+        {
+            // Must add it to the cross LA structure
+            GCHEAPHASHOBJECTREF gcheapKeyToValue = GetKeyToValueCrossLAHashForHashkeyToTrackers(gc.hashKeyToTrackers, pLoaderAllocatorOfValue);
+
+            gc.keyToValuePerLAHash = KeyToValuesGCHeapHash(gcheapKeyToValue);
+
             INT32 indexInKeyValueHash = gc.keyToValuePerLAHash.GetValueIndex(&key);
             if (indexInKeyValueHash != -1)
             {
@@ -333,9 +309,8 @@ void CrossLoaderAllocatorHash<TRAITS>::Add(TKey key, TValue value, LoaderAllocat
                 });
             }
         }
-        GCPROTECT_END();
     }
-#endif // !CROSSGEN_COMPILE
+    GCPROTECT_END();
 }
 #endif // !DACCESS_COMPILE
 
@@ -355,49 +330,52 @@ void CrossLoaderAllocatorHash<TRAITS>::Remove(TKey key, TValue value, LoaderAllo
     // data structure will require that the key's loader allocator is the same as that of this data structure.
     _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
 
-    // Get pointer to key data in SHash used for non-LA crossing data.
-
-    const WithinLoaderAllocatorDataStruct* pAssociatedWithKeyData = (WithinLoaderAllocatorDataStruct*)_withinLAHash.LookupPtr(key);
-    if (pAssociatedWithKeyData == NULL)
+    if (KeyToDependentTrackersHash == NULL)
     {
-        // If non-LA crossing data structure doesn't exist, then the value isn't present. Simply return.
+        // If the heap objects haven't been initted, then there is nothing to delete
         return;
     }
 
-    // Check to see if value can be added to this data structure directly.
-#ifndef CROSSGEN_COMPILE
-    if (_loaderAllocator == pLoaderAllocatorOfValue)
-#endif //!CROSSGEN_COMPILE
+    struct {
+        GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
+        KeyToValuesGCHeapHash keyToValuePerLAHash;
+        LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
+        OBJECTREF keyValueStore;
+    } gc;
+
+    ZeroMemory(&gc, sizeof(gc));
+    GCPROTECT_BEGIN(gc)
     {
-        TRAITS::DeleteValue(&pAssociatedWithKeyData->_values, value);
-    }
-#ifndef CROSSGEN_COMPILE
-    else
-    {
-        // Must remove it from the cross LA structure
-        GCHEAPHASHOBJECTREF gcheapKeyToValue = GetKeyToValueCrossLAHash(key, pLoaderAllocatorOfValue);
+        gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
+        INT32 index = gc.keyToTrackersHash.GetValueIndex(&key);
 
-        struct {
-            KeyToValuesGCHeapHash keyToValuePerLAHash;
-            OBJECTREF keyValueStore;
-        } gc;
-
-        ZeroMemory(&gc, sizeof(gc));
-
-        gc.keyToValuePerLAHash = KeyToValuesGCHeapHash(gcheapKeyToValue);
-
-        GCPROTECT_BEGIN(gc)
+        if (index != -1)
         {
-            INT32 indexInKeyValueHash = gc.keyToValuePerLAHash.GetValueIndex(&key);
-            if (indexInKeyValueHash != -1)
+            gc.keyToTrackersHash.GetElement(index, gc.hashKeyToTrackers);
+            gc.keyValueStore = gc.hashKeyToTrackers->_laLocalKeyValueStore;
+
+            // Check to see if value can be added to this data structure directly.
+            if (_loaderAllocator == pLoaderAllocatorOfValue)
             {
-                gc.keyToValuePerLAHash.GetElement(indexInKeyValueHash, gc.keyValueStore);
                 TRAITS::DeleteValueInHeapMemory(gc.keyValueStore, value);
             }
+            else
+            {
+                // Must remove it from the cross LA structure
+                GCHEAPHASHOBJECTREF gcheapKeyToValue = GetKeyToValueCrossLAHashForHashkeyToTrackers(gc.hashKeyToTrackers, pLoaderAllocatorOfValue);
+
+                gc.keyToValuePerLAHash = KeyToValuesGCHeapHash(gcheapKeyToValue);
+
+                INT32 indexInKeyValueHash = gc.keyToValuePerLAHash.GetValueIndex(&key);
+                if (indexInKeyValueHash != -1)
+                {
+                    gc.keyToValuePerLAHash.GetElement(indexInKeyValueHash, gc.keyValueStore);
+                    TRAITS::DeleteValueInHeapMemory(gc.keyValueStore, value);
+                }
+            }
         }
-        GCPROTECT_END();
     }
-#endif // !CROSSGEN_COMPILE
+    GCPROTECT_END();
 }
 #endif // !DACCESS_COMPILE
 
@@ -417,65 +395,47 @@ bool CrossLoaderAllocatorHash<TRAITS>::VisitValuesOfKey(TKey key, Visitor &visit
     // data structure will require that the key's loader allocator is the same as that of this data structure.
     _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
 
-    // Get pointer to key data in SHash used for non-LA crossing data.
-
-    const WithinLoaderAllocatorDataStruct* pAssociatedWithKeyData = _withinLAHash.LookupPtr(key);
-    if (pAssociatedWithKeyData == NULL)
+    // Check to see that something has been added
+    if (KeyToDependentTrackersHash == NULL)
         return true;
 
-    // Visit data local to local LA
-    auto beginLocalWalk = pAssociatedWithKeyData->_values.Begin();
-    auto endLocalWalk = pAssociatedWithKeyData->_values.Begin();
-    OBJECTREF nullObjectRef = NULL;
-    for (auto i = beginLocalWalk; i != endLocalWalk; ++i)
-    {
-        if (!visitor(nullObjectRef, *i))
-            return false;
-    }
-
     bool result = true;
-#ifndef CROSSGEN_COMPILE
-    if (((INT_PTR)pAssociatedWithKeyData->_key & 1) == 1)
+    struct 
     {
-        // There is non-local data;
-        struct 
+        GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
+        GCHeapHashDependentHashTrackerHash dependentTrackerHash;
+        LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
+        LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
+        LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
+        GCHEAPHASHOBJECTREF returnValue;
+    } gc;
+    ZeroMemory(&gc, sizeof(gc));
+    GCPROTECT_BEGIN(gc)
+    {
+        gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
+        INT32 index = gc.keyToTrackersHash.GetValueIndex(&key);
+        if (index != -1)
         {
-            GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
-            GCHeapHashDependentHashTrackerHash dependentTrackerHash;
-            LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
-            LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
-            LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
-            GCHEAPHASHOBJECTREF returnValue;
-        } gc;
-        ZeroMemory(&gc, sizeof(gc));
-        GCPROTECT_BEGIN(gc)
-        {
-            gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
-            INT32 index = gc.keyToTrackersHash.GetValueIndex(&key);
-            if (index != -1)
+            // We have an entry in the hashtable for the key/dependenthandle.
+            gc.keyToTrackersHash.GetElement(index, gc.hashKeyToTrackers);
+
+            // Now gc.hashKeyToTrackers is filled in.
+
+            // Is there a single dependenttracker here, or a set.
+
+            if (gc.hashKeyToTrackers->_trackerOrTrackerSet->GetMethodTable() == MscorlibBinder::GetClass(CLASS__LAHASHDEPENDENTHASHTRACKER))
             {
-                // We have an entry in the hashtable for the key/dependenthandle.
-                gc.keyToTrackersHash.GetElement(index, gc.hashKeyToTrackers);
-
-                // Now gc.hashKeyToTrackers is filled in.
-
-                // Is there a single dependenttracker here, or a set.
-
-                if (gc.hashKeyToTrackers->_trackerOrTrackerSet->GetMethodTable() == MscorlibBinder::GetClass(CLASS__LAHASHDEPENDENTHASHTRACKER))
-                {
-                    gc.dependentTracker = (LAHASHDEPENDENTHASHTRACKERREF)gc.hashKeyToTrackers->_trackerOrTrackerSet;
-                    result = VisitTracker(key, gc.dependentTracker, visitor);
-                }
-                else
-                {
-                    gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(gc.hashKeyToTrackers->_trackerOrTrackerSet);
-                    result = gc.dependentTrackerHash.VisitAllEntryIndices(VisitIndividualEntryKeyValueHash<Visitor>(key, &visitor, &gc.dependentTrackerHash));
-                }
+                gc.dependentTracker = (LAHASHDEPENDENTHASHTRACKERREF)gc.hashKeyToTrackers->_trackerOrTrackerSet;
+                result = VisitTracker(key, gc.dependentTracker, visitor);
+            }
+            else
+            {
+                gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(gc.hashKeyToTrackers->_trackerOrTrackerSet);
+                result = gc.dependentTrackerHash.VisitAllEntryIndices(VisitIndividualEntryKeyValueHash<Visitor>(key, &visitor, &gc.dependentTrackerHash));
             }
         }
-        GCPROTECT_END();
     }
-#endif // !CROSSGEN_COMPILE
+    GCPROTECT_END();
 
     return result;
 }
@@ -496,49 +456,35 @@ bool CrossLoaderAllocatorHash<TRAITS>::VisitAllKeyValuePairs(Visitor &visitor)
     // data structure will require that the key's loader allocator is the same as that of this data structure.
     _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
 
-    // Get pointer to key data in SHash used for non-LA crossing data.
-
-    auto beginLAHash = _withinLAHash.Begin();
-    auto endLAHash = _withinLAHash.End();
-
-    // Walk all entries in LAHash
-    for (auto iLAHash = beginLAHash; iLAHash != endLAHash; ++iLAHash)
+    struct 
     {
-        auto beginLocalWalk = pAssociatedWithKeyData->_values.Begin();
-        auto endLocalWalk = pAssociatedWithKeyData->_values.Begin();
-        OBJECTREF nullObjectRef = NULL;
-        for (auto i = beginLocalWalk; i != endLocalWalk; ++i)
+        GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
+        GCHeapHashDependentHashTrackerHash dependentTrackerHash;
+        LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
+        LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
+        LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
+        GCHEAPHASHOBJECTREF returnValue;
+    } gc;
+    ZeroMemory(&gc, sizeof(gc));
+    GCPROTECT_BEGIN(gc)
+    {
+        bool result = true;
+        if (KeyToDependentTrackersHash != NULL)
         {
-            if (!visitor(nullObjectRef, pAssociatedWithKeyData->_key, *i))
-                return false;
+            // Visit all local entries
+            gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
+            result = gc.keyToTrackersHash.VisitAllEntryIndices(VisitAllEntryKeyToDependentTrackerHash<Visitor>(&visitor, &gc.keyToTrackersHash));
         }
-    }
 
-    bool result = true;
-#ifndef CROSSGEN_COMPILE
-    if (LAToDependentTrackerHash != NULL)
-    {
-        // If there are remote entries, walk them
-
-        // There is non-local data;
-        struct 
+        if (LAToDependentTrackerHash != NULL)
         {
-            GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
-            GCHeapHashDependentHashTrackerHash dependentTrackerHash;
-            LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
-            LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
-            LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
-            GCHEAPHASHOBJECTREF returnValue;
-        } gc;
-        ZeroMemory(&gc, sizeof(gc));
-        GCPROTECT_BEGIN(gc)
-        {
-            gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
+            // Visit the non-local data
+            gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(LAToDependentTrackerHash));
             result = gc.dependentTrackerHash.VisitAllEntryIndices(VisitAllEntryDependentTrackerHash<Visitor>(&visitor, &gc.dependentTrackerHash));
         }
+
         GCPROTECT_END();
     }
-#endif // !CROSSGEN_COMPILE
 
     return result;
 }
@@ -559,69 +505,84 @@ void CrossLoaderAllocatorHash<TRAITS>::RemoveAll(TKey key)
     // data structure will require that the key's loader allocator is the same as that of this data structure.
     _ASSERTE(key->GetLoaderAllocator() == _loaderAllocator);
 
-    // Get pointer to key data in SHash used for non-LA crossing data.
-
-    const WithinLoaderAllocatorDataStruct* pAssociatedWithKeyData = _withinLAHash.LookupPtr(key);
-    if (pAssociatedWithKeyData == NULL)
-        return; // There are no entries associated with key
-
-#ifndef CROSSGEN_COMPILE
-    if (((INT_PTR)pAssociatedWithKeyData->_key & 1) == 1)
+    if (KeyToDependentTrackersHash == NULL)
     {
-        // There is non-local data;
-        struct 
-        {
-            GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
-            GCHeapHashDependentHashTrackerHash dependentTrackerHash;
-            LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
-            LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
-            LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
-            GCHEAPHASHOBJECTREF returnValue;
-        } gc;
-        ZeroMemory(&gc, sizeof(gc));
-        GCPROTECT_BEGIN(gc)
-        {
-            gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
-            INT32 index = gc.keyToTrackersHash.GetValueIndex(&key);
-            if (index != -1)
-            {
-                // We have an entry in the hashtable for the key/dependenthandle.
-                gc.keyToTrackersHash.GetElement(index, gc.hashKeyToTrackers);
-
-                // Now gc.hashKeyToTrackers is filled in.
-
-                // Is there a single dependenttracker here, or a set.
-
-                if (gc.hashKeyToTrackers->_trackerOrTrackerSet->GetMethodTable() == MscorlibBinder::GetClass(CLASS__LAHASHDEPENDENTHASHTRACKER))
-                {
-                    gc.dependentTracker = (LAHASHDEPENDENTHASHTRACKERREF)gc.hashKeyToTrackers->_trackerOrTrackerSet;
-                    result = DeleteEntryTracker(key, gc.dependentTracker);
-                }
-                else
-                {
-                    gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(gc.hashKeyToTrackers->_trackerOrTrackerSet);
-                    result = gc.dependentTrackerHash.VisitAllEntryIndices(DeleteIndividualEntryKeyValueHash<Visitor>(key, &gc.dependentTrackerHash));
-                }
-
-                // Remove entry from key to tracker hash
-                gc.keyToTrackersHash.DeleteEntry(&key);
-            }
-        }
-        GCPROTECT_END();
+        return; // Nothing was ever added, so removing all is easy
     }
-#endif // !CROSSGEN_COMPILE
 
-    _withinLAHash.Remove(key);
+    struct 
+    {
+        GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
+        GCHeapHashDependentHashTrackerHash dependentTrackerHash;
+        LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
+        LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
+        LAHASHKEYTOTRACKERSREF hashKeyToTrackers;
+        GCHEAPHASHOBJECTREF returnValue;
+    } gc;
+    ZeroMemory(&gc, sizeof(gc));
+    GCPROTECT_BEGIN(gc)
+    {
+        gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
+        INT32 index = gc.keyToTrackersHash.GetValueIndex(&key);
+        if (index != -1)
+        {
+            // We have an entry in the hashtable for the key/dependenthandle.
+            gc.keyToTrackersHash.GetElement(index, gc.hashKeyToTrackers);
+
+            // Now gc.hashKeyToTrackers is filled in.
+
+            // Is there a single dependenttracker here, or a set.
+
+            if (gc.hashKeyToTrackers->_trackerOrTrackerSet->GetMethodTable() == MscorlibBinder::GetClass(CLASS__LAHASHDEPENDENTHASHTRACKER))
+            {
+                gc.dependentTracker = (LAHASHDEPENDENTHASHTRACKERREF)gc.hashKeyToTrackers->_trackerOrTrackerSet;
+                result = DeleteEntryTracker(key, gc.dependentTracker);
+            }
+            else
+            {
+                gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(gc.hashKeyToTrackers->_trackerOrTrackerSet);
+                result = gc.dependentTrackerHash.VisitAllEntryIndices(DeleteIndividualEntryKeyValueHash<Visitor>(key, &gc.dependentTrackerHash));
+            }
+
+            // Remove entry from key to tracker hash
+            gc.keyToTrackersHash.DeleteEntry(&key);
+        }
+    }
+    GCPROTECT_END();
 }
 #endif // !DACCESS_COMPILE
 
 template <class TRAITS>
 void CrossLoaderAllocatorHash<TRAITS>::Init(LoaderAllocator *pAssociatedLoaderAllocator)
 {
+    LIMITED_METHOD_CONTRACT;
     _loaderAllocator = pAssociatedLoaderAllocator;
 }
 
-#ifndef CROSSGEN_COMPILE
+template <class TRAITS>
+template <class Visitor>
+/*static*/ bool CrossLoaderAllocatorHash<TRAITS>::VisitKeyValueStore(OBJECTREF *pLoaderAllocatorRef, UPTRARRAYREF *pKeyValueStore, Visitor &visitor)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    DWORD usedEntries = ((DWORD)(*pKeyValueStore)->GetDirectPointerToNonObjectElements()[1]) + 2;
+    for (DWORD index = 2; index < usedEntries; ++index)
+    {
+        if (!visitor(*pLoaderAllocatorRef, (TKey)(*pKeyValueStore)->GetDirectPointerToNonObjectElements()[0], (TValue)(*pKeyValueStore)->GetDirectPointerToNonObjectElements()[index]))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 template <class TRAITS>
 template <class Visitor>
 /*static*/ bool CrossLoaderAllocatorHash<TRAITS>::VisitTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor)
@@ -659,21 +620,9 @@ template <class Visitor>
             {
                 gc.keyToValuesHash.GetElement(indexInKeyValueHash, gc.keyValueStore);
 
-                _ASSERTE(gc.keyValueStore->GetDirectPointerToNonObjectElements()[0] == (UINT_PTR)key);
-
-                // We now have the keyValueStore. Check to see if there is free space within it
-                DWORD usedEntries = ((DWORD)gc.keyValueStore->GetDirectPointerToNonObjectElements()[1]) + 2;
-                for (DWORD index = 2; index < usedEntries; ++index)
-                {
-                    result = visitor(gc.loaderAllocatorRef, (TKey)gc.keyValueStore->GetDirectPointerToNonObjectElements()[index]);
-                    if (!result)
-                    {
-                        goto readyToReturn; // Early out
-                    }
-                }
+                result = VisitKeyValueStore(&gc.loaderAllocatorRef, &gc.keyValueStore, visitor);
             }
         }
-readyToReturn:;
     }
     GCPROTECT_END();
 
@@ -721,17 +670,7 @@ template <class Visitor>
             WRAPPER_NO_CONTRACT;
 
             _pKeysToValueHash->GetElement(index, *_pKeyValueStore);
-
-            DWORD usedEntries = ((DWORD)(*_pKeyValueStore)->GetDirectPointerToNonObjectElements()[1]) + 2;
-            for (DWORD index = 2; index < usedEntries; ++index)
-            {
-                result = visitor(*pLoaderAllocatorRef, (TKey)(*_pKeyValueStore)->GetDirectPointerToNonObjectElements()[0], (TValue)(*_pKeyValueStore)->GetDirectPointerToNonObjectElements()[index]);
-                if (!result)
-                {
-                    return false;
-                }
-            }
-            return true;
+            return VisitKeyValueStore(pLoaderAllocatorRef, _pKeyValueStore, visitor);
         }
     };
 
@@ -748,6 +687,40 @@ template <class Visitor>
             gc.keyToValuesHash = KeyToValuesGCHeapHash(gc.keyToValuesHashObject);
             result = gc.keyToValuesHash.VisitAllEntryIndices(VisitAllEntryKeyValueHash<Visitor>(&visitor, &gc.keyToValuesHash, &gc.keyValueStore, &gc.loaderAllocatorRef));
         }
+    }
+    GCPROTECT_END();
+
+    return result;
+}
+
+template <class TRAITS>
+template <class Visitor>
+/*static*/ bool CrossLoaderAllocatorHash<TRAITS>::VisitKeyToTrackerAllEntries(LAHASHKEYTOTRACKERSREF keyToTrackerUnsafe, Visitor &visitor)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
+    struct _gcStruct
+    {
+        LAHASHKEYTOTRACKERSREF keyToTracker;
+        OBJECTREF loaderAllocatorRef;
+        UPTRARRAYREF keyValueStore;
+    }gc;
+
+    ZeroMemory(&gc, sizeof(gc));
+    gc.keyToTracker = keyToTrackerUnsafe;
+
+    bool result = true;
+
+    GCPROTECT_BEGIN(gc);
+    {
+        gc.keyValueStore = gc.keyToTracker->_laLocalKeyValueStore;
+        result = VisitKeyValueStore(&gc.loaderAllocatorRef, &gc.keyValueStore, visitor);
     }
     GCPROTECT_END();
 
@@ -788,9 +761,7 @@ template <class TRAITS>
     }
     GCPROTECT_END();
 }
-#endif // !CROSSGEN_COMPILE
 
-#ifndef CROSSGEN_COMPILE
 template <class TRAITS>
 void CrossLoaderAllocatorHash<TRAITS>::EnsureManagedObjectsInitted()
 {
@@ -814,9 +785,7 @@ void CrossLoaderAllocatorHash<TRAITS>::EnsureManagedObjectsInitted()
         KeyToDependentTrackersHash = _loaderAllocator->AllocateHandle(keyToDependentTrackersHash);
     }
 }
-#endif // !CROSSGEN_COMPILE
 
-#ifndef CROSSGEN_COMPILE
 template <class TRAITS>
 LAHASHDEPENDENTHASHTRACKERREF CrossLoaderAllocatorHash<TRAITS>::GetDependentTrackerForLoaderAllocator(LoaderAllocator* pLoaderAllocator)
 {
@@ -852,11 +821,9 @@ LAHASHDEPENDENTHASHTRACKERREF CrossLoaderAllocatorHash<TRAITS>::GetDependentTrac
 
     return gc.dependentTracker;
 }
-#endif // !CROSSGEN_COMPILE
 
-#ifndef CROSSGEN_COMPILE
 template <class TRAITS>
-GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHash(TKey key, LoaderAllocator* pValueLoaderAllocator)
+GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHashForHashkeyToTrackers(LAHASHKEYTOTRACKERSREF hashKeyToTrackersUnsafe, LoaderAllocator* pValueLoaderAllocator)
 {
     CONTRACTL
     {
@@ -869,7 +836,6 @@ GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHash(T
     EnsureManagedObjectsInitted();
     struct 
     {
-        GCHeapHashKeyToDependentTrackersHash keyToTrackersHash;
         GCHeapHashDependentHashTrackerHash dependentTrackerHash;
         LAHASHDEPENDENTHASHTRACKERREF dependentTrackerMaybe;
         LAHASHDEPENDENTHASHTRACKERREF dependentTracker;
@@ -877,83 +843,69 @@ GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHash(T
         GCHEAPHASHOBJECTREF returnValue;
     } gc;
     ZeroMemory(&gc, sizeof(gc));
+    gc.hashKeyToTrackers = hashKeyToTrackersUnsafe;
     GCPROTECT_BEGIN(gc)
     {
-        gc.keyToTrackersHash = GCHeapHashKeyToDependentTrackersHash((GCHEAPHASHOBJECTREF)_loaderAllocator->GetHandleValue(KeyToDependentTrackersHash));
-        INT32 index = gc.keyToTrackersHash.GetValueIndex(&key);
-        if (index == -1)
+        // Now gc.hashKeyToTrackers is filled in.
+
+        // Is there a single dependenttracker here, or a set, or no dependenttracker at all
+        if (gc.hashKeyToTrackers->_trackerOrTrackerSet == NULL)
         {
-            gc.hashKeyToTrackers = (LAHASHKEYTOTRACKERSREF)AllocateObject(MscorlibBinder::GetClass(CLASS__LAHASHKEYTOTRACKERS));
-            gc.hashKeyToTrackers->_key = (INT_PTR)key;
             gc.dependentTracker = GetDependentTrackerForLoaderAllocator(pValueLoaderAllocator);
-            gc.hashKeyToTrackers->_trackerOrTrackerSet = gc.dependentTracker;
-            gc.keyToTrackersHash.Add(&key, [&gc](PTRARRAYREF arr, INT32 index)
-                {
-                    arr->SetAt(index, (OBJECTREF)gc.hashKeyToTrackers);
-                });
+            SetObjectReference(&gc.hashKeyToTrackers->_trackerOrTrackerSet, gc.dependentTracker, GetAppDomain());
         }
-        else
+        else if (gc.hashKeyToTrackers->_trackerOrTrackerSet->GetMethodTable() == MscorlibBinder::GetClass(CLASS__LAHASHDEPENDENTHASHTRACKER))
         {
-
-            // We already have an entry in the hashtable for the key/dependenthandle. Get the right dependent tracker...
-            gc.keyToTrackersHash.GetElement(index, gc.hashKeyToTrackers);
-
-            // Now gc.hashKeyToTrackers is filled in.
-
-            // Is there a single dependenttracker here, or a set.
-            if (gc.hashKeyToTrackers->_trackerOrTrackerSet->GetMethodTable() == MscorlibBinder::GetClass(CLASS__LAHASHDEPENDENTHASHTRACKER))
+            gc.dependentTrackerMaybe = (LAHASHDEPENDENTHASHTRACKERREF)gc.hashKeyToTrackers->_trackerOrTrackerSet;
+            if (gc.dependentTrackerMaybe->IsTrackerFor(pValueLoaderAllocator))
             {
-                gc.dependentTrackerMaybe = (LAHASHDEPENDENTHASHTRACKERREF)gc.hashKeyToTrackers->_trackerOrTrackerSet;
-                if (gc.dependentTrackerMaybe->IsTrackerFor(pValueLoaderAllocator))
-                {
-                    // We've found the right dependent tracker.
-                    gc.dependentTracker = gc.dependentTrackerMaybe;
-                }
-                else
-                {
-                    gc.dependentTracker = GetDependentTrackerForLoaderAllocator(pValueLoaderAllocator);
-                    if (!gc.dependentTrackerMaybe->IsLoaderAllocatorLive())
-                    {
-                        SetObjectReference(&gc.hashKeyToTrackers->_trackerOrTrackerSet, gc.dependentTracker, GetAppDomain());
-                    }
-                    else
-                    {
-                        // Allocate the dependent tracker hash
-                        // Fill with the existing dependentTrackerMaybe, and gc.DependentTracker
-                        gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(AllocateObject(MscorlibBinder::GetClass(CLASS__GCHEAPHASH)));
-                        LoaderAllocator *pLoaderAllocatorKey = gc.dependentTracker->GetLoaderAllocatorUnsafe();
-                        gc.dependentTrackerHash.Add(&pLoaderAllocatorKey, [&gc](PTRARRAYREF arr, INT32 index)
-                            {
-                                arr->SetAt(index, (OBJECTREF)gc.dependentTracker);
-                            });
-                        pLoaderAllocatorKey = gc.dependentTrackerMaybe->GetLoaderAllocatorUnsafe();
-                        gc.dependentTrackerHash.Add(&pLoaderAllocatorKey, [&gc](PTRARRAYREF arr, INT32 index)
-                            {
-                                arr->SetAt(index, (OBJECTREF)gc.dependentTrackerMaybe);
-                            });
-                    }
-                }
+                // We've found the right dependent tracker.
+                gc.dependentTracker = gc.dependentTrackerMaybe;
             }
             else
             {
-                gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(gc.hashKeyToTrackers->_trackerOrTrackerSet);
-
-                INT32 indexOfTracker = gc.dependentTrackerHash.GetValueIndex(&pValueLoaderAllocator);
-                if (indexOfTracker == -1)
+                gc.dependentTracker = GetDependentTrackerForLoaderAllocator(pValueLoaderAllocator);
+                if (!gc.dependentTrackerMaybe->IsLoaderAllocatorLive())
                 {
-                    // Dependent tracker not yet attached to this key
-                    
-                    // Get dependent tracker
-                    gc.dependentTracker = GetDependentTrackerForLoaderAllocator(pValueLoaderAllocator);
-                    gc.dependentTrackerHash.Add(&pValueLoaderAllocator, [&gc](PTRARRAYREF arr, INT32 index)
-                        {
-                            arr->SetAt(index, (OBJECTREF)gc.dependentTracker);
-                        });
+                    SetObjectReference(&gc.hashKeyToTrackers->_trackerOrTrackerSet, gc.dependentTracker, GetAppDomain());
                 }
                 else
                 {
-                    gc.dependentTrackerHash.GetElement(indexOfTracker, gc.dependentTracker);
+                    // Allocate the dependent tracker hash
+                    // Fill with the existing dependentTrackerMaybe, and gc.DependentTracker
+                    gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(AllocateObject(MscorlibBinder::GetClass(CLASS__GCHEAPHASH)));
+                    LoaderAllocator *pLoaderAllocatorKey = gc.dependentTracker->GetLoaderAllocatorUnsafe();
+                    gc.dependentTrackerHash.Add(&pLoaderAllocatorKey, [&gc](PTRARRAYREF arr, INT32 index)
+                        {
+                            arr->SetAt(index, (OBJECTREF)gc.dependentTracker);
+                        });
+                    pLoaderAllocatorKey = gc.dependentTrackerMaybe->GetLoaderAllocatorUnsafe();
+                    gc.dependentTrackerHash.Add(&pLoaderAllocatorKey, [&gc](PTRARRAYREF arr, INT32 index)
+                        {
+                            arr->SetAt(index, (OBJECTREF)gc.dependentTrackerMaybe);
+                        });
                 }
+            }
+        }
+        else
+        {
+            gc.dependentTrackerHash = GCHeapHashDependentHashTrackerHash(gc.hashKeyToTrackers->_trackerOrTrackerSet);
+
+            INT32 indexOfTracker = gc.dependentTrackerHash.GetValueIndex(&pValueLoaderAllocator);
+            if (indexOfTracker == -1)
+            {
+                // Dependent tracker not yet attached to this key
+                
+                // Get dependent tracker
+                gc.dependentTracker = GetDependentTrackerForLoaderAllocator(pValueLoaderAllocator);
+                gc.dependentTrackerHash.Add(&pValueLoaderAllocator, [&gc](PTRARRAYREF arr, INT32 index)
+                    {
+                        arr->SetAt(index, (OBJECTREF)gc.dependentTracker);
+                    });
+            }
+            else
+            {
+                gc.dependentTrackerHash.GetElement(indexOfTracker, gc.dependentTracker);
             }
         }
 
@@ -964,7 +916,7 @@ GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHash(T
 
     return gc.returnValue;
 }
-#endif // !CROSSGEN_COMPILE
 
+#endif // !CROSSGEN_COMPILE
 #endif // CROSSLOADERALLOCATORHASH_H
 #endif // CROSSLOADERALLOCATORHASH_INL

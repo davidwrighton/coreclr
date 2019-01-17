@@ -30,6 +30,6 @@ namespace System.Runtime.CompilerServices
     internal class LAHashKeyToTrackers
     {
         object _trackerOrTrackerSet;
-        IntPtr _key;
+        object _laLocalKeyValueStore;
     }
 }

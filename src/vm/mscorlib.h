@@ -1404,7 +1404,7 @@ DEFINE_CLASS(LAHASHDEPENDENTHASHTRACKER, CompilerServices, LAHashDependentHashTr
 
 DEFINE_CLASS_U(CompilerServices,           LAHashKeyToTrackers,             LAHashKeyToTrackersObject)
 DEFINE_FIELD_U(_trackerOrTrackerSet,       LAHashKeyToTrackersObject,       _trackerOrTrackerSet)
-DEFINE_FIELD_U(_key,                       LAHashKeyToTrackersObject,       _key)
+DEFINE_FIELD_U(_laLocalKeyValueStore,      LAHashKeyToTrackersObject,       _laLocalKeyValueStore)
 
 DEFINE_CLASS(LAHASHKEYTOTRACKERS, CompilerServices, LAHashKeyToTrackers)
 

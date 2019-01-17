@@ -2918,7 +2918,7 @@ class LAHashKeyToTrackersObject : public Object
 
     public:
     OBJECTREF _trackerOrTrackerSet;
-    INT_PTR _key;
+    OBJECTREF _laLocalKeyValueStore;
 };
 
 typedef DPTR(LAHashDependentHashTrackerObject)  PTR_LAHashDependentHashTrackerObject;

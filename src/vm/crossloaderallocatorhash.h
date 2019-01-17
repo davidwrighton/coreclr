@@ -4,10 +4,9 @@
 
 #ifndef CROSSLOADERALLOCATORHASH_H
 #define CROSSLOADERALLOCATORHASH_H
-
 #ifndef CROSSGEN_COMPILE
+
 #include "gcheaphashtable.h"
-#endif // !CROSSGEN_COMPILE
 
 class LoaderAllocator;
 
@@ -17,13 +16,9 @@ class NoRemoveDefaultCrossLoaderAllocatorHashTraits
 public:
     typedef typename TKey_ TKey;
     typedef typename TValue_ TValue;
-    typedef SArray<TValue> TLALocalValueStore;
 
 #ifndef DACCESS_COMPILE
-    static void AddToValues(SArray<TValue> *pValues, const TValue& value);
-#ifndef CROSSGEN_COMPILE
     static void AddToValuesInHeapMemory(OBJECTREF &keyValueStore, OBJECTREF &newKeyValueStore, const TKey& key, const TValue& value);
-#endif // !CROSSGEN_COMPILE
 #endif //!DACCESS_COMPILE
 };
 
@@ -32,14 +27,10 @@ class DefaultCrossLoaderAllocatorHashTraits : public NoRemoveDefaultCrossLoaderA
 {
 public:
 #ifndef DACCESS_COMPILE
-    static void DeleteValue(SArray<TValue> *pValues, const TValue& value);
-#ifndef CROSSGEN_COMPILE
     static void DeleteValueInHeapMemory(OBJECTREF keyValueStore, const TValue& value);
-#endif // !CROSSGEN_COMPILE
 #endif //!DACCESS_COMPILE
 };
 
-#ifndef CROSSGEN_COMPILE
 struct GCHeapHashDependentHashTrackerHashTraits : public DefaultGCHeapHashTraits<true>
 {
     typedef LoaderAllocator* PtrTypeKey;
@@ -63,14 +54,6 @@ struct GCHeapHashKeyToDependentTrackersHashTraits : public DefaultGCHeapHashTrai
 };
 
 typedef GCHeapHash<GCHeapHashKeyToDependentTrackersHashTraits> GCHeapHashKeyToDependentTrackersHash;
-#endif // !CROSSGEN_COMPILE
-
-template <class TKey, class TValue, class TLALocalValueStore>
-struct WithinLoaderAllocatorData
-{
-    mutable TKey _key;
-    mutable TLALocalValueStore _values;
-};
 
 // Hashtable of pointer to pointer where the key may live in a different loader allocator than the value
 // and this should not keep the loaderallocator of Key alive.
@@ -80,9 +63,6 @@ class CrossLoaderAllocatorHash
 private:
     typedef typename TRAITS::TKey TKey;
     typedef typename TRAITS::TValue TValue;
-    typedef typename TRAITS::TLALocalValueStore TLALocalValueStore;
-
-    typedef typename WithinLoaderAllocatorData<TKey, TValue, TLALocalValueStore> WithinLoaderAllocatorDataStruct;
 
 public:
 
@@ -115,51 +95,8 @@ public:
     void Init(LoaderAllocator *pAssociatedLoaderAllocator);
 
 private:
-    class WithinLoaderAllocatorDataHashTraits : public DeleteElementsOnDestructSHashTraits<NoRemoveSHashTraits<DefaultSHashTraits<WithinLoaderAllocatorDataStruct>>>
-    {
-    public:
-        typedef DeleteElementsOnDestructSHashTraits<NoRemoveSHashTraits<DefaultSHashTraits<WithinLoaderAllocatorDataStruct>>> Base;
-        typedef COUNT_T count_t;
-
-        typedef TKey key_t;
-
-        void OnDestructPerEntryCleanupAction(const WithinLoaderAllocatorDataStruct & elem)
-        {
-            WRAPPER_NO_CONTRACT;
-
-            elem.~WithinLoaderAllocatorData();
-            elem._key = nullptr;
-        }
-        static const bool s_DestructPerEntryCleanupAction = true;
-
-        static key_t GetKey(const WithinLoaderAllocatorDataStruct &e)
-        {
-            LIMITED_METHOD_CONTRACT;
-            return (key_t)((INT_PTR)e._key & ~1);
-        }
-
-        static BOOL Equals(key_t k1, key_t k2)
-        {
-            LIMITED_METHOD_CONTRACT;
-            return k1 == k2;
-        }
-
-        static count_t Hash(key_t k)
-        {
-            LIMITED_METHOD_CONTRACT;
-            return (count_t)((size_t)dac_cast<TADDR>(k) >> 2);
-        }
-
-        static const WithinLoaderAllocatorDataStruct Null() { LIMITED_METHOD_CONTRACT; WithinLoaderAllocatorDataStruct nullValue = {0}; return nullValue; }
-        static bool IsNull(const WithinLoaderAllocatorDataStruct &e) { LIMITED_METHOD_CONTRACT; return e._key == nullptr; }
-    };
-
-    typedef SHash<WithinLoaderAllocatorDataHashTraits> WithinLoaderAllocatorDataHash;
-#ifndef CROSSGEN_COMPILE
     typedef GCHeapHash<GCHeapHashTraitsPointerToPointerList<TKey, false>> KeyToValuesGCHeapHash;
-#endif // !CROSSGEN_COMPILE
 
-#ifndef CROSSGEN_COMPILE
     template <class Visitor>
     class VisitIndividualEntryKeyValueHash
     {
@@ -206,6 +143,28 @@ private:
         }
     };
 
+    template <class Visitor>
+    class VisitAllEntryKeyToDependentTrackerHash
+    {
+        public:
+        Visitor *_pVisitor;
+        GCHeapHashKeyToDependentTrackersHash *_pKeyToTrackerHash;
+
+        VisitAllEntryKeyToDependentTrackerHash(Visitor *pVisitor,  GCHeapHashKeyToDependentTrackersHash *pKeyToTrackerHash) : 
+            _pVisitor(pVisitor),
+            _pKeyToTrackerHash(pKeyToTrackerHash)
+            {}
+
+        bool operator()(INT32 index)
+        {
+            WRAPPER_NO_CONTRACT;
+
+            LAHASHKEYTOTRACKERSREF keyToTrackers;
+            _pKeyToTrackerHash->GetElement(index, keyToTrackers);
+            return VisitKeyToTrackerAllEntries(keyToTrackers, *_pVisitor);
+        }
+    };
+
 #ifndef DACCESS_COMPILE
     class DeleteIndividualEntryKeyValueHash
     {
@@ -229,24 +188,26 @@ private:
         }
     };
 #endif // !DACCESS_COMPILE
-#endif // !CROSSGEN_COMPILE
 
-#ifndef CROSSGEN_COMPILE
     void EnsureManagedObjectsInitted();
     LAHASHDEPENDENTHASHTRACKERREF GetDependentTrackerForLoaderAllocator(LoaderAllocator* pLoaderAllocator);
-    GCHEAPHASHOBJECTREF GetKeyToValueCrossLAHash(TKey key, LoaderAllocator* pValueLoaderAllocator);
+    GCHEAPHASHOBJECTREF GetKeyToValueCrossLAHashForHashkeyToTrackers(LAHASHKEYTOTRACKERSREF hashKeyToTrackersUnsafe, LoaderAllocator* pValueLoaderAllocator);
+
+    template <class Visitor>
+    static bool VisitKeyValueStore(OBJECTREF *pLoaderAllocatorRef, UPTRARRAYREF *pKeyValueStore, Visitor &visitor);
     template <class Visitor>
     static bool VisitTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor);
     template <class Visitor>
     static bool VisitTrackerAllEntries(LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor);
+    template <class Visitor>
+    static bool VisitKeyToTrackerAllEntries(LAHASHKEYTOTRACKERSREF keyToTrackerUnsafe, Visitor &visitor);
     static void DeleteEntryTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe);
-#endif // !CROSSGEN_COMPILE
 
 private:
-    WithinLoaderAllocatorDataHash _withinLAHash;
     LoaderAllocator *_loaderAllocator = 0;
     LOADERHANDLE LAToDependentTrackerHash = 0;
     LOADERHANDLE KeyToDependentTrackersHash = 0;
 };
 
+#endif // !CROSSGEN_COMPILE
 #endif // CROSSLOADERALLOCATORHASH_H
