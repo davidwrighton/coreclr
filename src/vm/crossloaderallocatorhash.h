@@ -205,8 +205,8 @@ private:
 
 private:
     LoaderAllocator *_loaderAllocator = 0;
-    LOADERHANDLE LAToDependentTrackerHash = 0;
-    LOADERHANDLE KeyToDependentTrackersHash = 0;
+    OBJECTHANDLE LAToDependentTrackerHash = 0;
+    OBJECTHANDLE KeyToDependentTrackersHash = 0;
 };
 
 #endif // !CROSSGEN_COMPILE
