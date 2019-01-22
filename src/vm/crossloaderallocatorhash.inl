@@ -776,15 +776,15 @@ void CrossLoaderAllocatorHash<TRAITS>::EnsureManagedObjectsInitted()
     if (LAToDependentTrackerHash == NULL)
     {
         OBJECTREF laToDependentHandleHash = AllocateObject(MscorlibBinder::GetClass(CLASS__GCHEAPHASH));
-        LAToDependentTrackerHash = GetDomain()->CreateHandle(laToDependentHandleHash);
-        RegisterHandleForCleanup(LAToDependentTrackerHash);
+        LAToDependentTrackerHash = _loaderAllocator->GetDomain()->CreateHandle(laToDependentHandleHash);
+        _loaderAllocator->RegisterHandleForCleanup(LAToDependentTrackerHash);
     }
 
     if (KeyToDependentTrackersHash == NULL)
     {
         OBJECTREF keyToDependentTrackersHash = AllocateObject(MscorlibBinder::GetClass(CLASS__GCHEAPHASH));
-        KeyToDependentTrackersHash = GetDomain()->CreateHandle(keyToDependentTrackersHash);
-        RegisterHandleForCleanup(KeyToDependentTrackersHash);
+        KeyToDependentTrackersHash = _loaderAllocator->GetDomain()->CreateHandle(keyToDependentTrackersHash);
+        _loaderAllocator->RegisterHandleForCleanup(KeyToDependentTrackersHash);
     }
 }
 

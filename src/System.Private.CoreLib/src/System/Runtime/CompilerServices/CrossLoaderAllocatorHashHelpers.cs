@@ -11,6 +11,7 @@ namespace System.Runtime.CompilerServices
     /// Managed structure used by CrossLoaderAllocatorHeap to isolate per LoaderAllocator
     /// data. 
     /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
     internal class LAHashDependentHashTracker
     {
         GCHandle _dependentHandle;

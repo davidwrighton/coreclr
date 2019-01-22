@@ -1260,8 +1260,9 @@ void Assembly::PrepareModuleForAssembly(Module* module, AllocMemTracker *pamTrac
     }
 
 #ifdef FEATURE_PREJIT
-    if (!module->HasNativeImage() && !IsSystem())
+    if (module->HasNativeImage() && !IsSystem())
     {
+        GCX_COOP();
         LoaderAllocator::DisableDyanmicTypeKnowledgeOptimizations();
     }
 #endif // FEATURE_PREJIT
