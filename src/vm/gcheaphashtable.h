@@ -21,14 +21,14 @@ struct DefaultGCHeapHashTraits
 
     static const bool s_remove_supported = remove_supported;
 
-    static bool IsNull(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
-    static bool IsDeleted(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
+    static bool IsNull(PTRARRAYREF arr, INT32 index);
+    static bool IsDeleted(PTRARRAYREF arr, INT32 index, GCHEAPHASHOBJECTREF gcHeap);
     static THashArrayType AllocateArray(INT32 size);
 
     // Not a part of the traits api, but used to allow derived traits to save on code
     static OBJECTREF GetValueAtIndex(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
 
-    static void CopyValue(GCHEAPHASHOBJECTREF *pgcHeapSrc, INT32 indexSrc, THashArrayType destinationArray, INT32 indexDest);
+    static void CopyValue(THashArrayType srcArray, INT32 indexSrc, THashArrayType destinationArray, INT32 indexDest);
     static void DeleteEntry(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
 
     template<class TElement>
@@ -42,8 +42,8 @@ template <class PtrTypeKey, bool supports_remove>
 struct GCHeapHashTraitsPointerToPointerList : public DefaultGCHeapHashTraits<supports_remove>
 {
     static INT32 Hash(PtrTypeKey *pValue);
-    static INT32 Hash(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
-    static bool DoesEntryMatchKey(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index, PtrTypeKey *pKey);
+    static INT32 Hash(PTRARRAYREF arr, INT32 index);
+    static bool DoesEntryMatchKey(PTRARRAYREF arr, INT32 index, PtrTypeKey *pKey);
 };
 
 template <class TRAITS>
@@ -66,6 +66,31 @@ class GCHeapHash
     count_t NextPrime(count_t number);
 
     void ReplaceTable(THashArrayType newTable);
+
+    template<class TKey>
+    count_t CallHash(TKey* pValue)
+    {
+        WRAPPER_NO_CONTRACT;
+
+        count_t hash = TRAITS::Hash(pValue);
+        hash = hash < 0 ? -hash : hash;
+        if (hash < 0)
+            return 1;
+        else
+            return hash;
+    }
+
+    count_t CallHash(THashArrayType arr, count_t index)
+    {
+        WRAPPER_NO_CONTRACT;
+
+        count_t hash = TRAITS::Hash(arr, index);
+        hash = hash < 0 ? -hash : hash;
+        if (hash < 0)
+            return 1;
+        else
+            return hash;
+    }
 
     public:
 

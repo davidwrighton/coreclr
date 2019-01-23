@@ -36,9 +36,9 @@ struct GCHeapHashDependentHashTrackerHashTraits : public DefaultGCHeapHashTraits
     typedef LoaderAllocator* PtrTypeKey;
     
     static INT32 Hash(PtrTypeKey *pValue);
-    static INT32 Hash(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
-    static bool DoesEntryMatchKey(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index, PtrTypeKey *pKey);
-    static bool IsDeleted(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
+    static INT32 Hash(PTRARRAYREF arr, INT32 index);
+    static bool DoesEntryMatchKey(PTRARRAYREF arr, INT32 index, PtrTypeKey *pKey);
+    static bool IsDeleted(PTRARRAYREF arr, INT32 index, GCHEAPHASHOBJECTREF gcHeap);
 };
 
 typedef GCHeapHash<GCHeapHashDependentHashTrackerHashTraits> GCHeapHashDependentHashTrackerHash;
@@ -47,10 +47,10 @@ struct GCHeapHashKeyToDependentTrackersHashTraits : public DefaultGCHeapHashTrai
 {
     template <class TKey>
     static INT32 Hash(TKey *pValue);
-    static INT32 Hash(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index);
+    static INT32 Hash(PTRARRAYREF arr, INT32 index);
 
     template<class TKey>
-    static bool DoesEntryMatchKey(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index, TKey *pKey);
+    static bool DoesEntryMatchKey(PTRARRAYREF arr, INT32 index, TKey *pKey);
 };
 
 typedef GCHeapHash<GCHeapHashKeyToDependentTrackersHashTraits> GCHeapHashKeyToDependentTrackersHash;

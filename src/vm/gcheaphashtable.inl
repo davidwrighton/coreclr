@@ -7,43 +7,21 @@
 #define GCHEAPHASHTABLE_INL
 
 template <bool remove_supported>
-/*static */bool DefaultGCHeapHashTraits<remove_supported>::IsNull(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index)
+/*static */bool DefaultGCHeapHashTraits<remove_supported>::IsNull(PTRARRAYREF arr, INT32 index)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
-
-    PTRARRAYREF arr((PTRARRAYREF)(*pgcHeap)->GetData());
-
-#ifndef DACCESS_COMPILE
-    if (arr == NULL)
-        COMPlusThrow(kNullReferenceException);
-
-    if ((INT32)arr->GetNumComponents() < index)
-        COMPlusThrow(kIndexOutOfRangeException);
-#endif // !DACCESS_COMPILE
+    LIMITED_METHOD_CONTRACT;
 
     return arr->GetAt(index) == 0;
 }
 
 template <bool remove_supported>
-/*static */bool DefaultGCHeapHashTraits<remove_supported>::IsDeleted(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index)
+/*static */bool DefaultGCHeapHashTraits<remove_supported>::IsDeleted(PTRARRAYREF arr, INT32 index, GCHEAPHASHOBJECTREF gcHeap)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    LIMITED_METHOD_CONTRACT;
 
     if (s_remove_supported)
     {
-        return *pgcHeap == GetValueAtIndex(pgcHeap, index);
+        return gcHeap == arr->GetAt(index);
     }
     else
     {
@@ -62,43 +40,24 @@ template <bool remove_supported>
     }
     CONTRACTL_END;
 
-    return (THashArrayType)AllocatePrimitiveArray(ELEMENT_TYPE_OBJECT, size, FALSE);
+    return (THashArrayType)AllocateObjectArray(size, g_pObjectClass);
 }
 
     // Not a part of the traits api, but used to allow derived traits to save on code
 template <bool remove_supported>
 /*static*/ OBJECTREF DefaultGCHeapHashTraits<remove_supported>::GetValueAtIndex(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    LIMITED_METHOD_CONTRACT;
 
     PTRARRAYREF arr((PTRARRAYREF)(*pgcHeap)->GetData());
 
-#ifndef DACCESS_COMPILE
-    if (arr == NULL)
-        COMPlusThrow(kNullReferenceException);
-
-    if ((INT32)arr->GetNumComponents() < index)
-        COMPlusThrow(kIndexOutOfRangeException);
-#endif // !DACCESS_COMPILE
-
     OBJECTREF value = arr->GetAt(index);
-
-#ifndef DACCESS_COMPILE
-    if (value == NULL)
-        COMPlusThrow(kNullReferenceException);
-#endif // !DACCESS_COMPILE
 
     return value;
 }
 
 template <bool remove_supported>
-/*static*/ void DefaultGCHeapHashTraits<remove_supported>::CopyValue(GCHEAPHASHOBJECTREF *pgcHeapSrc, INT32 indexSrc, THashArrayType destinationArray, INT32 indexDest)
+/*static*/ void DefaultGCHeapHashTraits<remove_supported>::CopyValue(THashArrayType srcArray, INT32 indexSrc, THashArrayType destinationArray, INT32 indexDest)
 {
     CONTRACTL
     {
@@ -108,15 +67,13 @@ template <bool remove_supported>
     }
     CONTRACTL_END;
 
-    PTRARRAYREF arr((PTRARRAYREF)(*pgcHeapSrc)->GetData());
-
-    if (arr == NULL)
+    if (srcArray == NULL)
         COMPlusThrow(kNullReferenceException);
 
-    if ((INT32)arr->GetNumComponents() < indexSrc)
+    if ((INT32)srcArray->GetNumComponents() < indexSrc)
         COMPlusThrow(kIndexOutOfRangeException);
 
-    OBJECTREF value = arr->GetAt(indexSrc);
+    OBJECTREF value = srcArray->GetAt(indexSrc);
 
     if ((INT32)destinationArray->GetNumComponents() < indexDest)
         COMPlusThrow(kIndexOutOfRangeException);
@@ -153,13 +110,7 @@ template <bool remove_supported>
 template<class TElement>
 /*static*/ void DefaultGCHeapHashTraits<remove_supported>::GetElement(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index, TElement& foundElement)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    LIMITED_METHOD_CONTRACT;
 
     foundElement = (TElement)GetValueAtIndex(pgcHeap, index);
 }
@@ -195,38 +146,21 @@ template <class PtrTypeKey, bool supports_remove>
 }
 
 template <class PtrTypeKey, bool supports_remove>
-/*static */INT32 GCHeapHashTraitsPointerToPointerList<PtrTypeKey, supports_remove>::Hash(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index)
+/*static */INT32 GCHeapHashTraitsPointerToPointerList<PtrTypeKey, supports_remove>::Hash(PTRARRAYREF arr, INT32 index)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    LIMITED_METHOD_CONTRACT;
 
-    UPTRARRAYREF value = (UPTRARRAYREF)GetValueAtIndex(pgcHeap, index);
-
-    if (value->GetNumComponents() < 1)
-        COMPlusThrow(kIndexOutOfRangeException);
+    UPTRARRAYREF value = (UPTRARRAYREF)arr->GetAt(index);
     
     return (INT32)*value->GetDirectConstPointerToNonObjectElements();
 }
 
 template <class PtrTypeKey, bool supports_remove>
-/*static */bool GCHeapHashTraitsPointerToPointerList<PtrTypeKey, supports_remove>::DoesEntryMatchKey(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index, PtrTypeKey *pKey)
+/*static */bool GCHeapHashTraitsPointerToPointerList<PtrTypeKey, supports_remove>::DoesEntryMatchKey(PTRARRAYREF arr, INT32 index, PtrTypeKey *pKey)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    LIMITED_METHOD_CONTRACT;
 
-    PTRARRAYREF arr((PTRARRAYREF)(*pgcHeap)->GetData());
-
-    UPTRARRAYREF value = (UPTRARRAYREF)GetValueAtIndex(pgcHeap, index);
+    UPTRARRAYREF value = (UPTRARRAYREF)arr->GetAt(index);
     UPTR uptrValue = *value->GetDirectConstPointerToNonObjectElements();
 
     return ((UPTR)*pKey) == uptrValue;
@@ -244,17 +178,17 @@ void GCHeapHash<TRAITS>::Insert(TKey *pKey, const TValueSetter &valueSetter)
     }
     CONTRACTL_END;
 
-    count_t hash = TRAITS::Hash(pKey);
+    count_t hash = CallHash(pKey);
     count_t tableSize = _gcHeap->GetCapacity();
     count_t index = hash % tableSize; 
     count_t increment = 0; // delay computation
 
     while (TRUE)
     {
-        if (TRAITS::IsNull(&_gcHeap, index) || TRAITS::IsDeleted(&_gcHeap, index))
-        {
-            THashArrayType arr((THashArrayType)_gcHeap->GetData());
+        THashArrayType arr((THashArrayType)(_gcHeap)->GetData());
 
+        if (TRAITS::IsNull(arr, index) || TRAITS::IsDeleted(arr, index, _gcHeap))
+        {
             if (arr == NULL)
                 COMPlusThrow(kNullReferenceException);
 
@@ -409,9 +343,10 @@ void GCHeapHash<TRAITS>::ReplaceTable(THashArrayType newTable)
 
         for (count_t index = 0; index < capacity; ++index)
         {
-            if (!TRAITS::IsNull(&_gcHeap, index) && !TRAITS::IsDeleted(&_gcHeap, index))
+            THashArrayType arr((THashArrayType)(_gcHeap)->GetData());
+            if (!TRAITS::IsNull(arr, index) && !TRAITS::IsDeleted(arr, index, _gcHeap))
             {
-                count_t hash = TRAITS::Hash(&_gcHeap, index);
+                count_t hash = CallHash(arr, index);
                 count_t tableSize = (count_t)newTable->GetNumComponents();
                 count_t newIndex = hash % tableSize; 
                 count_t increment = 0; // delay computation
@@ -419,9 +354,11 @@ void GCHeapHash<TRAITS>::ReplaceTable(THashArrayType newTable)
                 // Value to copy is in index
                 while (TRUE)
                 {
-                    if (TRAITS::IsNull(&_gcHeap, newIndex))
+                    if (TRAITS::IsNull(newTable, newIndex))
                     {
-                        TRAITS::CopyValue(&_gcHeap, index, newTable, newIndex);
+                        arr = (THashArrayType)(_gcHeap)->GetData();
+                        TRAITS::CopyValue(arr, index, newTable, newIndex);
+                        break;
                     }
                 
                     if (increment == 0)
@@ -443,19 +380,14 @@ template <class TRAITS>
 template<class TVisitor>
 bool GCHeapHash<TRAITS>::VisitAllEntryIndices(TVisitor &visitor)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    WRAPPER_NO_CONTRACT;
 
     count_t capacity = _gcHeap->GetCapacity();
 
     for (count_t index = 0; index < capacity; ++index)
     {
-        if (!TRAITS::IsNull(&_gcHeap, index) && !TRAITS::IsDeleted(&_gcHeap, index))
+        THashArrayType arr((THashArrayType)(_gcHeap)->GetData());
+        if (!TRAITS::IsNull(arr, index) && !TRAITS::IsDeleted(arr, index, _gcHeap))
         {
             if (!visitor(index))
                 return false;
@@ -488,25 +420,32 @@ INT32 GCHeapHash<TRAITS>::GetValueIndex(TKey *pKey)
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
+        NOTHROW;
+        GC_NOTRIGGER;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    count_t hash = TRAITS::Hash(pKey);
+    count_t hash = CallHash(pKey);
     count_t tableSize = _gcHeap->GetCapacity();
+
+    // If the table is empty, then 
+    if (tableSize == 0)
+        return -1;
+
     count_t index = hash % tableSize; 
     count_t increment = 0; // delay computation
 
+    THashArrayType arr((THashArrayType)(_gcHeap)->GetData());
+
     while (TRUE)
     {
-        if (TRAITS::IsNull(&_gcHeap, index))
+        if (TRAITS::IsNull(arr, index))
         {
             return -1;
         }
 
-        if (!TRAITS::IsDeleted(&_gcHeap, index) && TRAITS::DoesEntryMatchKey(&_gcHeap, index, pKey))
+        if (!TRAITS::IsDeleted(arr, index, _gcHeap) && TRAITS::DoesEntryMatchKey(arr, index, pKey))
         {
             return index;
         }
@@ -524,6 +463,8 @@ template <class TRAITS>
 template<class TElement>
 void GCHeapHash<TRAITS>::GetElement(INT32 index, TElement& foundElement)
 {
+    WRAPPER_NO_CONTRACT;
+
     TRAITS::GetElement(&_gcHeap, index, foundElement);
 }
 

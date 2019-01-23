@@ -92,54 +92,52 @@ template <class TKey_, class TValue_>
     return (INT32)*pValue;
 }
 
-/*static*/ inline INT32 GCHeapHashDependentHashTrackerHashTraits::Hash(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index)
+/*static*/ inline INT32 GCHeapHashDependentHashTrackerHashTraits::Hash(PTRARRAYREF arr, INT32 index)
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
+        NOTHROW;
+        GC_NOTRIGGER;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)GetValueAtIndex(pgcHeap, index);
+    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)arr->GetAt(index);
     LoaderAllocator *pLoaderAllocator = value->GetLoaderAllocatorUnsafe();
     return Hash(&pLoaderAllocator);
 }
 
-/*static*/ inline bool GCHeapHashDependentHashTrackerHashTraits::DoesEntryMatchKey(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index, PtrTypeKey *pKey)
+/*static*/ inline bool GCHeapHashDependentHashTrackerHashTraits::DoesEntryMatchKey(PTRARRAYREF arr, INT32 index, PtrTypeKey *pKey)
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
+        NOTHROW;
+        GC_NOTRIGGER;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    PTRARRAYREF arr((PTRARRAYREF)(*pgcHeap)->GetData());
-
-    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)GetValueAtIndex(pgcHeap, index);
+    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)arr->GetAt(index);
 
     return value->IsTrackerFor(*pKey);
 }
 
-/*static*/ inline bool GCHeapHashDependentHashTrackerHashTraits::IsDeleted(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index)
+/*static*/ inline bool GCHeapHashDependentHashTrackerHashTraits::IsDeleted(PTRARRAYREF arr, INT32 index, GCHEAPHASHOBJECTREF gcHeap)
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
+        NOTHROW;
+        GC_NOTRIGGER;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    OBJECTREF valueInHeap = GetValueAtIndex(pgcHeap, index);
+    OBJECTREF valueInHeap = arr->GetAt(index);
 
     if (valueInHeap == NULL)
         return false;
 
-    if (*pgcHeap == valueInHeap)
+    if (gcHeap == valueInHeap)
         return true;
 
     // This is a tricky bit of logic used which detects freed loader allocators lazily
@@ -149,16 +147,8 @@ template <class TKey_, class TValue_>
     if (!value->IsLoaderAllocatorLive())
     {
 #ifndef DACCESS_COMPILE
-        PTRARRAYREF arr((PTRARRAYREF)(*pgcHeap)->GetData());
-
-        if (arr == NULL)
-            COMPlusThrow(kNullReferenceException);
-
-        if ((INT32)arr->GetNumComponents() < index)
-            COMPlusThrow(kIndexOutOfRangeException);
-
-        arr->SetAt(index, *pgcHeap);
-        (*pgcHeap)->DecrementCount();
+        arr->SetAt(index, gcHeap);
+        gcHeap->DecrementCount();
 #endif // DACCESS_COMPILE
 
         return true;
@@ -174,36 +164,34 @@ template <class TKey>
     return (INT32)*pValue;
 }
 
-/*static*/ inline INT32 GCHeapHashKeyToDependentTrackersHashTraits::Hash(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index)
+/*static*/ inline INT32 GCHeapHashKeyToDependentTrackersHashTraits::Hash(PTRARRAYREF arr, INT32 index)
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
+        NOTHROW;
+        GC_NOTRIGGER;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)GetValueAtIndex(pgcHeap, index);
+    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)arr->GetAt(index);
 
     void * key = value->GetLoaderAllocatorUnsafe();
     return Hash(&key);
 }
 
 template<class TKey>
-/*static*/ bool GCHeapHashKeyToDependentTrackersHashTraits::DoesEntryMatchKey(GCHEAPHASHOBJECTREF *pgcHeap, INT32 index, TKey *pKey)
+/*static*/ bool GCHeapHashKeyToDependentTrackersHashTraits::DoesEntryMatchKey(PTRARRAYREF arr, INT32 index, TKey *pKey)
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
+        NOTHROW;
+        GC_NOTRIGGER;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
 
-    PTRARRAYREF arr((PTRARRAYREF)(*pgcHeap)->GetData());
-
-    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)GetValueAtIndex(pgcHeap, index);
+    LAHASHDEPENDENTHASHTRACKERREF value = (LAHASHDEPENDENTHASHTRACKERREF)arr->GetAt(index);
 
     if ((INT_PTR)value->GetLoaderAllocatorUnsafe() != (INT_PTR)*pKey)
         return false;
@@ -383,13 +371,7 @@ template <class TRAITS>
 template <class Visitor>
 bool CrossLoaderAllocatorHash<TRAITS>::VisitValuesOfKey(TKey key, Visitor &visitor)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    WRAPPER_NO_CONTRACT;
 
     // This data structure actually doesn't have this invariant, but it is expected that uses of this
     // data structure will require that the key's loader allocator is the same as that of this data structure.
@@ -446,8 +428,6 @@ bool CrossLoaderAllocatorHash<TRAITS>::VisitAllKeyValuePairs(Visitor &visitor)
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
@@ -563,13 +543,7 @@ template <class TRAITS>
 template <class Visitor>
 /*static*/ bool CrossLoaderAllocatorHash<TRAITS>::VisitKeyValueStore(OBJECTREF *pLoaderAllocatorRef, UPTRARRAYREF *pKeyValueStore, Visitor &visitor)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_COOPERATIVE;
-    }
-    CONTRACTL_END;
+    WRAPPER_NO_CONTRACT;
 
     DWORD usedEntries = ((DWORD)(*pKeyValueStore)->GetDirectPointerToNonObjectElements()[1]) + 2;
     for (DWORD index = 2; index < usedEntries; ++index)
@@ -589,8 +563,6 @@ template <class Visitor>
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
@@ -635,8 +607,6 @@ template <class Visitor>
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
@@ -699,8 +669,6 @@ template <class Visitor>
 {
     CONTRACTL
     {
-        THROWS;
-        GC_TRIGGERS;
         MODE_COOPERATIVE;
     }
     CONTRACTL_END;
@@ -791,6 +759,14 @@ void CrossLoaderAllocatorHash<TRAITS>::EnsureManagedObjectsInitted()
 template <class TRAITS>
 LAHASHDEPENDENTHASHTRACKERREF CrossLoaderAllocatorHash<TRAITS>::GetDependentTrackerForLoaderAllocator(LoaderAllocator* pLoaderAllocator)
 {
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_COOPERATIVE;
+    }
+    CONTRACTL_END;
+
     struct 
     {
         GCHeapHashDependentHashTrackerHash dependentTrackerHash;
