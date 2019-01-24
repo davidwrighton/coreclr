@@ -63,7 +63,7 @@ void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, Me
 #endif
 
 UINT64 LoaderAllocator::cLoaderAllocatorsCreated = 1;
-SArray<LoaderAllocator*>* LoaderAllocator::s_activeLoaderAllocators = nullptr;
+LoaderAllocator* LoaderAllocator::s_activeLoaderAllocatorLinkedList = nullptr;
 CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsCrst;
 CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsPreemptiveCrst;
 BOOL LoaderAllocator::fDynamicTypeLoaderOptimizationsDisabled = FALSE;
@@ -100,7 +100,6 @@ void LoaderAllocator::DisableDyanmicTypeKnowledgeOptimizations()
 void LoaderAllocator::Init()
 {
 #ifndef DACCESS_COMPILE
-    s_activeLoaderAllocators = new SArray<LoaderAllocator*>();
     s_ActiveLoaderAllocatorsCrst.Init(CrstActiveLoaderAllocators, CRST_UNSAFE_ANYMODE);
     s_ActiveLoaderAllocatorsPreemptiveCrst.Init(CrstActiveLoaderAllocators);
 #endif // !DACCESS_COMPILE
@@ -165,8 +164,11 @@ LoaderAllocator::LoaderAllocator()
         CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
         LoaderAllocator *pOldFirstLoaderAllocator = s_activeLoaderAllocatorLinkedList;
 
-        _ASSERTE(pOldFirstLoaderAllocator->m_pPreviousLoaderAllocator == nullptr);
-        pOldFirstLoaderAllocator->m_pPreviousLoaderAllocator = this;
+        if (pOldFirstLoaderAllocator != nullptr)
+        {
+            _ASSERTE(pOldFirstLoaderAllocator->m_pPreviousLoaderAllocator == nullptr);
+            pOldFirstLoaderAllocator->m_pPreviousLoaderAllocator = this;
+        }
         m_pNextLoaderAllocator = pOldFirstLoaderAllocator;
         s_activeLoaderAllocatorLinkedList = this;
     }
