@@ -325,12 +325,16 @@ private:
     BOOL CheckAddReference_Unlocked(LoaderAllocator *pOtherLA);
     
     static UINT64 cLoaderAllocatorsCreated;
-    static SArray<LoaderAllocator*>* LoaderAllocator::s_activeLoaderAllocators;
+    static LoaderAllocator* s_activeLoaderAllocatorLinkedList;
     static CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsCrst;
     static CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsPreemptiveCrst;
     static BOOL fDynamicTypeLoaderOptimizationsDisabled;
 
     UINT64 m_nLoaderAllocator;
+
+    // Linked list of all currently live loader allocators. That data structure is protected by s_ActiveLoaderAllocatorsCrst
+    LoaderAllocator *m_pNextLoaderAllocator = nullptr;
+    LoaderAllocator *m_pPreviousLoaderAllocator = nullptr;
     
     struct FailedTypeInitCleanupListItem
     {

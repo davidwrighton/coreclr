@@ -73,11 +73,9 @@ void LoaderAllocator::DisableDyanmicTypeKnowledgeOptimizations()
     fDynamicTypeLoaderOptimizationsDisabled = TRUE;
 
     CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
-    auto iterActiveLoaderAllocators = s_activeLoaderAllocators->Begin();
-    auto iterActiveLoaderAllocatorsEnd = s_activeLoaderAllocators->End();
-    for (;iterActiveLoaderAllocators != iterActiveLoaderAllocatorsEnd; ++iterActiveLoaderAllocators)
+
+    for (LoaderAllocator *pAllocator = s_activeLoaderAllocatorLinkedList; pAllocator != nullptr; pAllocator = pAllocator->m_pNextLoaderAllocator)
     {
-        LoaderAllocator *pAllocator = *iterActiveLoaderAllocators;
         MethodTable *pMTToReportAsHavingUnknownImplementors = nullptr;
 
         do
@@ -165,7 +163,12 @@ LoaderAllocator::LoaderAllocator()
 #if !defined(DACCESS_COMPILE) && !defined(CROSSGEN_COMPILE)
     {
         CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
-        s_activeLoaderAllocators->Append(this);
+        LoaderAllocator *pOldFirstLoaderAllocator = s_activeLoaderAllocatorLinkedList;
+
+        _ASSERTE(pOldFirstLoaderAllocator->m_pPreviousLoaderAllocator == nullptr);
+        pOldFirstLoaderAllocator->m_pPreviousLoaderAllocator = this;
+        m_pNextLoaderAllocator = pOldFirstLoaderAllocator;
+        s_activeLoaderAllocatorLinkedList = this;
     }
 #endif
 }
@@ -188,14 +191,21 @@ LoaderAllocator::~LoaderAllocator()
 
     {
         CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
-        auto iterActiveLoaderAllocators = s_activeLoaderAllocators->Begin();
-        auto iterActiveLoaderAllocatorsEnd = s_activeLoaderAllocators->End();
-        for (;iterActiveLoaderAllocators != iterActiveLoaderAllocatorsEnd; ++iterActiveLoaderAllocators)
+        if (m_pPreviousLoaderAllocator == nullptr)
         {
-            if ((*iterActiveLoaderAllocators) == this)
+            // This was the first loader allocator
+            if (m_pNextLoaderAllocator != nullptr)
             {
-                s_activeLoaderAllocators->Delete(iterActiveLoaderAllocators);
-                break;
+                m_pNextLoaderAllocator->m_pPreviousLoaderAllocator = nullptr;
+            }
+            s_activeLoaderAllocatorLinkedList = m_pNextLoaderAllocator;
+        }
+        else
+        {
+            m_pPreviousLoaderAllocator->m_pNextLoaderAllocator = m_pNextLoaderAllocator;
+            if (m_pNextLoaderAllocator != nullptr)
+            {
+                m_pNextLoaderAllocator->m_pPreviousLoaderAllocator = m_pPreviousLoaderAllocator;
             }
         }
     }
