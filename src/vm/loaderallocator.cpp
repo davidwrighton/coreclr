@@ -65,6 +65,7 @@ void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, Me
 UINT64 LoaderAllocator::cLoaderAllocatorsCreated = 1;
 SArray<LoaderAllocator*>* LoaderAllocator::s_activeLoaderAllocators = nullptr;
 CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsCrst;
+CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsPreemptiveCrst;
 BOOL LoaderAllocator::fDynamicTypeLoaderOptimizationsDisabled = FALSE;
 
 void LoaderAllocator::DisableDyanmicTypeKnowledgeOptimizations()
@@ -103,6 +104,7 @@ void LoaderAllocator::Init()
 #ifndef DACCESS_COMPILE
     s_activeLoaderAllocators = new SArray<LoaderAllocator*>();
     s_ActiveLoaderAllocatorsCrst.Init(CrstActiveLoaderAllocators, CRST_UNSAFE_ANYMODE);
+    s_ActiveLoaderAllocatorsPreemptiveCrst.Init(CrstActiveLoaderAllocators);
 #endif // !DACCESS_COMPILE
 }
 
@@ -2256,9 +2258,8 @@ void LoaderAllocator::AddDerivedTypeInfo(MethodTable *pBaseType, MethodTable *pD
     STANDARD_VM_CONTRACT;
 
 #ifndef DACCESS_COMPILE
+    CrstHolder ch(&s_ActiveLoaderAllocatorsPreemptiveCrst);
     GCX_COOP();
-
-    CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
 
     // The first type to derive from an interface, and all types deriving from concrete types are
     // added to the derivation tables. The first Type to Add check may race with other checks for interfaces

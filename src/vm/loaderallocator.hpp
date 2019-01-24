@@ -327,6 +327,7 @@ private:
     static UINT64 cLoaderAllocatorsCreated;
     static SArray<LoaderAllocator*>* LoaderAllocator::s_activeLoaderAllocators;
     static CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsCrst;
+    static CrstStatic LoaderAllocator::s_ActiveLoaderAllocatorsPreemptiveCrst;
     static BOOL fDynamicTypeLoaderOptimizationsDisabled;
 
     UINT64 m_nLoaderAllocator;
@@ -751,7 +752,7 @@ public:
         CONTRACTL
         {
             THROWS;
-            MODE_ANY;
+            MODE_PREEMPTIVE;
             GC_TRIGGERS;
         }
         CONTRACTL_END;
@@ -760,8 +761,8 @@ public:
 
         if (MTHasDerivedType(pMT))
         {
+            CrstHolder ch(&s_ActiveLoaderAllocatorsPreemptiveCrst);
             GCX_COOP();
-            CrstHolder ch(&s_ActiveLoaderAllocatorsCrst);
 
             return !WalkDerivingAndImplementingMethodTables_Worker(pMT, lambda);
         }
