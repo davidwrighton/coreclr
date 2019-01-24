@@ -10249,13 +10249,6 @@ MethodTableBuilder::SetupMethodTable2(
     }
 #endif // FEATURE_COMINTEROP
 
-    if (IsInterface() && !bmtGenerics->IsTypicalTypeDefinition() && !bmtGenerics->fContainsGenericVariables && IsImplicitInterfaceOfSZArray(pMT))
-    {
-        // Implicit interfaces are implemented by arrays and regular types. As we don't track these implicit interface
-        // implementations eagerly during type loading, we need to mark that the interface type is multiply implemented.
-        pMT->GetWriteableDataForWrite()->SetHasMultipleDerivedTypes();
-    }
-
     if (bmtVT->pCCtor != NULL)
     {
         pMT->SetHasClassConstructor();
@@ -10472,6 +10465,13 @@ MethodTableBuilder::SetupMethodTable2(
     }
 
     pMT->SetCl(GetCl());
+
+    if (IsInterface() && !bmtGenerics->IsTypicalTypeDefinition() && !bmtGenerics->fContainsGenericVariables && IsImplicitInterfaceOfSZArray(pMT))
+    {
+        // Implicit interfaces are implemented by arrays and regular types. As we don't track these implicit interface
+        // implementations eagerly during type loading, we need to mark that the interface type is multiply implemented.
+        pMT->GetWriteableDataForWrite()->SetHasMultipleDerivedTypes();
+    }
 
     // The type is sufficiently initialized for most general purpose accessor methods to work.
     // Mark the type as restored to avoid avoid asserts. Note that this also enables IBC logging.
