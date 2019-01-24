@@ -129,7 +129,14 @@ bool IsInterfaceDirectCallableGivenCallAttempt(MethodTable *pMTObject, MethodTab
 {
     _ASSERTE(pInterfaceMTToDispatchTo->HasDerivedType() || 
             pInterfaceMTToDispatchTo->HasMultipleDerivedTypes());
-    return !pInterfaceMTToDispatchTo->HasMultipleDerivedTypes() && (pMTObject->GetLoaderAllocator() == pInterfaceMTToDispatchTo->GetLoaderAllocator());
+    bool result = !pInterfaceMTToDispatchTo->HasMultipleDerivedTypes() && (pMTObject->GetLoaderAllocator() == pInterfaceMTToDispatchTo->GetLoaderAllocator());
+    if (result)
+    {
+        // These conditions should be checked at type creation time and the information about the operation stored into HasMultipleDerivedTypes.
+        _ASSERTE(!pInterfaceMTToDispatchTo->HasVariance());
+        _ASSERTE(!IsImplicitInterfaceOfSZArray(pInterfaceMTToDispatchTo));
+    }
+    return result;
 }
 
 MethodTable *TokenToDevirtualizableMethodTable(DispatchToken token)

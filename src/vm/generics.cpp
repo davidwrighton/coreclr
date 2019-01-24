@@ -382,6 +382,13 @@ ClassLoader::CreateTypeHandleForNonCanonicalGenericInstantiation(
     }
 #endif // FEATURE_TYPEEQUIVALENCE
 
+    if (pOldMT->IsInterface() && pOldMT->HasVariance())
+    {
+        // Variant interfaces may be implemented by types which don't directly implement the interface
+        // So treat them as always being multiply implemented.
+        pMTWriteableData->SetHasMultipleDerivedTypes();
+    }
+
     if (pOldMT->IsInterface() && IsImplicitInterfaceOfSZArray(pOldMT))
     {
         // Implicit interfaces are implemented by arrays and types. As we don't track these implicit interface
