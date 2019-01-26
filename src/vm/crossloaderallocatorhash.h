@@ -18,8 +18,13 @@ public:
     typedef typename TValue_ TValue;
 
 #ifndef DACCESS_COMPILE
+    static DWORD ComputeUsedEntries(OBJECTREF &keyValueStore, DWORD *pEntriesInArrayTotal);
+    static void SetUsedEntries(TValue* pStartOfValuesData, DWORD entriesInArrayTotal, DWORD usedEntries);
     static void AddToValuesInHeapMemory(OBJECTREF &keyValueStore, OBJECTREF &newKeyValueStore, const TKey& key, const TValue& value);
 #endif //!DACCESS_COMPILE
+    template <class Visitor>
+    static bool VisitKeyValueStore(OBJECTREF *pLoaderAllocatorRef, OBJECTREF *pKeyValueStore, Visitor &visitor);
+    static TKey ReadKeyFromKeyValueStore(OBJECTREF *pKeyValueStore);
 };
 
 template <class TKey_, class TValue_>
@@ -43,7 +48,8 @@ struct GCHeapHashDependentHashTrackerHashTraits : public DefaultGCHeapHashTraits
 
 typedef GCHeapHash<GCHeapHashDependentHashTrackerHashTraits> GCHeapHashDependentHashTrackerHash;
 
-struct GCHeapHashKeyToDependentTrackersHashTraits : public DefaultGCHeapHashTraits<false>
+template<class TRAITS>
+struct KeyToValuesGCHeapHashTraits : public DefaultGCHeapHashTraits<true>
 {
     template <class TKey>
     static INT32 Hash(TKey *pValue);
@@ -53,8 +59,6 @@ struct GCHeapHashKeyToDependentTrackersHashTraits : public DefaultGCHeapHashTrai
     static bool DoesEntryMatchKey(PTRARRAYREF arr, INT32 index, TKey *pKey);
 };
 
-typedef GCHeapHash<GCHeapHashKeyToDependentTrackersHashTraits> GCHeapHashKeyToDependentTrackersHash;
-
 // Hashtable of pointer to pointer where the key may live in a different loader allocator than the value
 // and this should not keep the loaderallocator of Key alive.
 template <class TRAITS>
@@ -63,6 +67,7 @@ class CrossLoaderAllocatorHash
 private:
     typedef typename TRAITS::TKey TKey;
     typedef typename TRAITS::TValue TValue;
+    typedef GCHeapHash<KeyToValuesGCHeapHashTraits<TRAITS>> KeyToValuesGCHeapHash;
 
 public:
 
@@ -95,8 +100,6 @@ public:
     void Init(LoaderAllocator *pAssociatedLoaderAllocator);
 
 private:
-    typedef GCHeapHash<GCHeapHashTraitsPointerToPointerList<TKey, false>> KeyToValuesGCHeapHash;
-
     template <class Visitor>
     class VisitIndividualEntryKeyValueHash
     {
@@ -148,9 +151,9 @@ private:
     {
         public:
         Visitor *_pVisitor;
-        GCHeapHashKeyToDependentTrackersHash *_pKeyToTrackerHash;
+        KeyToValuesGCHeapHash *_pKeyToTrackerHash;
 
-        VisitAllEntryKeyToDependentTrackerHash(Visitor *pVisitor,  GCHeapHashKeyToDependentTrackersHash *pKeyToTrackerHash) : 
+        VisitAllEntryKeyToDependentTrackerHash(Visitor *pVisitor,  KeyToValuesGCHeapHash *pKeyToTrackerHash) : 
             _pVisitor(pVisitor),
             _pKeyToTrackerHash(pKeyToTrackerHash)
             {}
@@ -159,9 +162,9 @@ private:
         {
             WRAPPER_NO_CONTRACT;
 
-            LAHASHKEYTOTRACKERSREF keyToTrackers;
-            _pKeyToTrackerHash->GetElement(index, keyToTrackers);
-            return VisitKeyToTrackerAllEntries(keyToTrackers, *_pVisitor);
+            OBJECTREF hashKeyEntry;
+            _pKeyToTrackerHash->GetElement(index, hashKeyEntry);
+            return VisitKeyToTrackerAllEntries(hashKeyEntry, *_pVisitor);
         }
     };
 
@@ -194,13 +197,13 @@ private:
     GCHEAPHASHOBJECTREF GetKeyToValueCrossLAHashForHashkeyToTrackers(LAHASHKEYTOTRACKERSREF hashKeyToTrackersUnsafe, LoaderAllocator* pValueLoaderAllocator);
 
     template <class Visitor>
-    static bool VisitKeyValueStore(OBJECTREF *pLoaderAllocatorRef, UPTRARRAYREF *pKeyValueStore, Visitor &visitor);
+    static bool VisitKeyValueStore(OBJECTREF *pLoaderAllocatorRef, OBJECTREF *pKeyValueStore, Visitor &visitor);
     template <class Visitor>
     static bool VisitTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor);
     template <class Visitor>
     static bool VisitTrackerAllEntries(LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe, Visitor &visitor);
     template <class Visitor>
-    static bool VisitKeyToTrackerAllEntries(LAHASHKEYTOTRACKERSREF keyToTrackerUnsafe, Visitor &visitor);
+    static bool VisitKeyToTrackerAllEntries(OBJECTREF hashKeyEntryUnsafe, Visitor &visitor);
     static void DeleteEntryTracker(TKey key, LAHASHDEPENDENTHASHTRACKERREF trackerUnsafe);
 
 private:
