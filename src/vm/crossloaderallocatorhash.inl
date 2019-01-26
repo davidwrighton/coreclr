@@ -9,7 +9,6 @@
 
 #include "gcheaphashtable.inl"
 
-#ifndef DACCESS_COMPILE
 template <class TKey_, class TValue_>
 /*static*/ DWORD NoRemoveDefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::ComputeUsedEntries(OBJECTREF &keyValueStore, DWORD *pEntriesInArrayTotal)
 {
@@ -46,6 +45,7 @@ template <class TKey_, class TValue_>
     return usedEntries;
 }
 
+#ifndef DACCESS_COMPILE
 template <class TKey_, class TValue_>
 /*static*/ void NoRemoveDefaultCrossLoaderAllocatorHashTraits<TKey_, TValue_>::SetUsedEntries(TValue* pStartOfValuesData, DWORD entriesInArrayTotal, DWORD usedEntries)
 {

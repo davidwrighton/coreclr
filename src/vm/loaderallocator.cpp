@@ -28,10 +28,11 @@
 
 #include "crossloaderallocatorhash.h"
 #include "crossloaderallocatorhash.inl"
-#ifndef CROSSGEN_COMPILE
-void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, MethodTable *pMTOther)
+#if !defined(CROSSGEN_COMPILE) && !defined(DACCESS_COMPILE) 
+
+void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, PTR_MethodTable pMT, PTR_MethodTable pMTOther)
 {
-    struct SomeTraits : NoRemoveDefaultCrossLoaderAllocatorHashTraits<MethodTable *, void *>
+    struct SomeTraits : NoRemoveDefaultCrossLoaderAllocatorHashTraits<PTR_MethodTable, void *>
     {
     };
     CrossLoaderAllocatorHash<SomeTraits> laHash;
@@ -40,9 +41,9 @@ void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, Me
     laHash.Add(pMT, pMTOther, pMTOther->GetLoaderAllocator());
 #endif
 
-    laHash.VisitValuesOfKey(pMT, [](OBJECTREF obj, MethodTable *keyValue, void *pVisit) { return (pVisit != NULL);});
+    laHash.VisitValuesOfKey(pMT, [](OBJECTREF obj, PTR_MethodTable keyValue, void *pVisit) { return (pVisit != NULL);});
 
-    struct SomeTraits2 : DefaultCrossLoaderAllocatorHashTraits<MethodTable *, void *>
+    struct SomeTraits2 : DefaultCrossLoaderAllocatorHashTraits<PTR_MethodTable, void *>
     {
     };
     CrossLoaderAllocatorHash<SomeTraits2> laHash2;
@@ -52,7 +53,7 @@ void EnsureItCompiles(int *ptr, GCHEAPHASHOBJECTREF gcheap, MethodTable *pMT, Me
     laHash2.Remove(pMT, pMTOther, pMTOther->GetLoaderAllocator());
 #endif
 
-    laHash2.VisitValuesOfKey(pMT, [](OBJECTREF obj, MethodTable *keyValue, void *pVisit) { return (pVisit != NULL);});
+    laHash2.VisitValuesOfKey(pMT, [](OBJECTREF obj, PTR_MethodTable keyValue, void *pVisit) { return (pVisit != NULL);});
 
     GCHeapHash<GCHeapHashTraitsPointerToPointerList<int*, false>> hash(gcheap);
 #ifndef DACCESS_COMPILE

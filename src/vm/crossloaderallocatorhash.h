@@ -18,10 +18,10 @@ public:
     typedef typename TValue_ TValue;
 
 #ifndef DACCESS_COMPILE
-    static DWORD ComputeUsedEntries(OBJECTREF &keyValueStore, DWORD *pEntriesInArrayTotal);
     static void SetUsedEntries(TValue* pStartOfValuesData, DWORD entriesInArrayTotal, DWORD usedEntries);
     static void AddToValuesInHeapMemory(OBJECTREF &keyValueStore, OBJECTREF &newKeyValueStore, const TKey& key, const TValue& value);
 #endif //!DACCESS_COMPILE
+    static DWORD ComputeUsedEntries(OBJECTREF &keyValueStore, DWORD *pEntriesInArrayTotal);
     template <class Visitor>
     static bool VisitKeyValueStore(OBJECTREF *pLoaderAllocatorRef, OBJECTREF *pKeyValueStore, Visitor &visitor);
     static TKey ReadKeyFromKeyValueStore(OBJECTREF *pKeyValueStore);
