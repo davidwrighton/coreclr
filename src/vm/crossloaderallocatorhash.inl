@@ -341,7 +341,6 @@ void CrossLoaderAllocatorHash<TRAITS>::Add(TKey key, TValue value, LoaderAllocat
     }
     CONTRACTL_END;
 
-    EnsureManagedObjectsInitted();
 
     struct {
         KeyToValuesGCHeapHash keyToTrackersHash;
@@ -355,6 +354,8 @@ void CrossLoaderAllocatorHash<TRAITS>::Add(TKey key, TValue value, LoaderAllocat
     ZeroMemory(&gc, sizeof(gc));
     GCPROTECT_BEGIN(gc)
     {
+        EnsureManagedObjectsInitted();
+
         bool addToKeyValuesHash = false;
         // This data structure actually doesn't have this invariant, but it is expected that uses of this
         // data structure will require that the key's loader allocator is the same as that of this data structure.
@@ -1014,7 +1015,6 @@ GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHashFo
     }
     CONTRACTL_END;
 
-    EnsureManagedObjectsInitted();
     struct 
     {
         GCHeapHashDependentHashTrackerHash dependentTrackerHash;
@@ -1024,10 +1024,11 @@ GCHEAPHASHOBJECTREF CrossLoaderAllocatorHash<TRAITS>::GetKeyToValueCrossLAHashFo
         GCHEAPHASHOBJECTREF returnValue;
     } gc;
     ZeroMemory(&gc, sizeof(gc));
+    // Now gc.hashKeyToTrackers is filled in.
     gc.hashKeyToTrackers = hashKeyToTrackersUnsafe;
     GCPROTECT_BEGIN(gc)
     {
-        // Now gc.hashKeyToTrackers is filled in.
+        EnsureManagedObjectsInitted();
 
         // Is there a single dependenttracker here, or a set, or no dependenttracker at all
         if (gc.hashKeyToTrackers->_trackerOrTrackerSet == NULL)
