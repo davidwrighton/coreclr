@@ -34,6 +34,7 @@
 #include "typestring.h"
 #include "sha1.h"
 #include "finalizerthread.h"
+#include "threadsuspend.h"
 
 #ifdef FEATURE_COMINTEROP
     #include "comcallablewrapper.h"
@@ -891,6 +892,8 @@ UINT64   GCInterface::m_remPressure[NEW_PRESSURE_COUNT] = {0, 0, 0, 0};   // his
 // (m_iteration % NEW_PRESSURE_COUNT) is used as an index into m_addPressure and m_remPressure
 UINT     GCInterface::m_iteration = 0;
 
+UINT64   GCInterface::s_deadThreadAllocationCount = 0;
+
 FCIMPL5(void, GCInterface::GetMemoryInfo, UINT32* highMemLoadThreshold, UINT64* totalPhysicalMem, UINT32* lastRecordedMemLoad, size_t* lastRecordedHeapSize, size_t* lastRecordedFragmentation)
 {
     FCALL_CONTRACT;
@@ -1211,6 +1214,15 @@ FCIMPL0(int, GCInterface::GetMaxGeneration)
 }
 FCIMPLEND
 
+UINT64 GCInterface::GetAllocatedBytesForThread(Thread *pThread)
+{
+    LIMITED_METHOD_CONTRACT;
+    gc_alloc_context* ac = pThread->GetAllocContext();
+    INT64 currentAllocated = ac->alloc_bytes + ac->alloc_bytes_loh - (ac->alloc_limit - ac->alloc_ptr);
+
+    return (UINT64)currentAllocated;
+}
+
 /*===============================GetAllocatedBytesForCurrentThread===============================
 **Action: Computes the allocated bytes so far on the current thread
 **Returns: The allocated bytes so far on the current thread
@@ -1223,12 +1235,57 @@ FCIMPL0(INT64, GCInterface::GetAllocatedBytesForCurrentThread)
 
     INT64 currentAllocated = 0;
     Thread *pThread = GetThread();
-    gc_alloc_context* ac = pThread->GetAllocContext();
-    currentAllocated = ac->alloc_bytes + ac->alloc_bytes_loh - (ac->alloc_limit - ac->alloc_ptr);
-
-    return currentAllocated;
+    return (INT64)GetAllocatedBytesForThread(pThread);
 }
 FCIMPLEND
+
+/*===============================GetAllocatedBytesForAllThreads===============================
+**Action: Computes the allocated bytes so far on all threads
+**Returns: The allocated bytes so far on all threads
+**Arguments: None
+**Exceptions: None
+==============================================================================*/
+INT64 QCALLTYPE GCInterface::GetTotalAllocatedBytes(BOOL precise)
+{
+    QCALL_CONTRACT;
+
+    UINT64 currentAllocated;
+    BEGIN_QCALL;
+
+    if (precise)
+    {
+        // If precise, suspend the runtime and gather exact data.
+        ThreadSuspend::SuspendEE(ThreadSuspend::SUSPEND_OTHER);
+
+        currentAllocated = s_deadThreadAllocationCount;
+        Thread *currentThread = NULL;
+        while ((currentThread = ThreadStore::GetAllThreadList(currentThread, 0, 0)) != NULL)
+        {
+            currentAllocated += GetAllocatedBytesForThread(currentThread);
+        }
+
+        ThreadSuspend::RestartEE(FALSE, TRUE);
+    }
+    else
+    {
+        // If imprecise, just take the threadstore lock. When walking the threads list
+        // read the alloc_bytes field of the alloc context only. This will give a slight overestimate
+        // but won't require a suspension to succeed
+        ThreadStoreLockHolder tsLock;
+
+        currentAllocated = s_deadThreadAllocationCount;
+
+        Thread *currentThread = NULL;
+        while ((currentThread = ThreadStore::GetAllThreadList(currentThread, 0, 0)) != NULL)
+        {
+            currentAllocated += currentThread->GetAllocContext()->alloc_bytes;
+        }
+    }
+
+    END_QCALL;
+
+    return (INT64)currentAllocated;
+}
 
 /*==============================SuppressFinalize================================
 **Action: Indicate that an object's finalizer should not be run by the system

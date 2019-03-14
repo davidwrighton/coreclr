@@ -58,6 +58,43 @@ namespace System
         NotApplicable = 4
     }
 
+    public struct GCMemoryInfo
+    {
+        internal GCMemoryInfo(long highMemoryLoadThreshold, long totalAvailableMemory, int memoryLoad, long heapSize, long fragmentation)
+        {
+            HighMemoryLoadThreshold = highMemoryLoadThreshold;
+            TotalAvailableMemory = totalAvailableMemory;
+            MemoryLoad = memoryLoad;
+            HeapSize = heapSize;
+            Fragmentation = fragmentation;
+        }
+
+        /// <summary>
+        /// HighMemoryLoadThreshold when the GC occured
+        /// </summary>
+        public long HighMemoryLoadThreshold { get; }
+
+        /// <summary>
+        /// Total available memory for the GC to use. By default this is the physical memory on the machine, but it may be customized by specifying a HardLimit.
+        /// </summary>
+        public long TotalAvailableMemory { get; }
+
+        /// <summary>
+        /// Memory Load when the GC completes
+        /// </summary>
+        public int MemoryLoad { get; }
+
+        /// <summary>
+        /// The total heap size when the GC completes
+        /// </summary>
+        public long HeapSize { get; }
+
+        /// <summary>
+        /// The total fragmentation of the GC Heap
+        /// </summary>
+        public long Fragmentation { get; }
+    }
+
     public static class GC
     {
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
@@ -350,6 +387,14 @@ namespace System
             return _GetAllocatedBytesForCurrentThread();
         }
 
+        [DllImport(JitHelpers.QCall, CharSet = CharSet.Unicode)]
+        private static extern long _GetTotalAllocatedBytes([MarshalAs(UnmanagedType.Bool)] bool precise);
+
+        public static long GetTotalAllocatedBytes(bool precise)
+        {
+            return _GetTotalAllocatedBytes(precise);
+        }
+
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         private static extern bool _RegisterForFullGCNotification(int maxGenerationPercentage, int largeObjectHeapPercentage);
 
@@ -511,6 +556,25 @@ namespace System
         public static void EndNoGCRegion()
         {
             EndNoGCRegionWorker();
+        }
+
+        public static GCMemoryInfo GetGCMemoryInfo()
+        {
+            uint highMemLoadThreshold;
+            ulong totalPhysicalMem;
+            uint lastRecordedMemLoad;
+            UIntPtr lastRecordedHeapSize;
+            UIntPtr lastRecordedFragmentation;
+
+            GetMemoryInfo(out highMemLoadThreshold, out totalPhysicalMem, out lastRecordedMemLoad, out lastRecordedHeapSize, out lastRecordedFragmentation);
+
+            GCMemoryInfo info = new GCMemoryInfo(highMemoryLoadThreshold: (long)(totalPhysicalMem * highMemLoadThreshold / 100),
+                                                 totalAvailableMemory: (long)totalPhysicalMem,
+                                                 memoryLoad: (int)lastRecordedMemLoad,
+                                                 heapSize: (long)lastRecordedHeapSize.ToUInt64(),
+                                                 fragmentation: (long)lastRecordedFragmentation.ToUInt64());
+
+            return info;
         }
     }
 }

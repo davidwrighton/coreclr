@@ -104,6 +104,8 @@ private:
     static UINT     m_iteration;
     
 public:
+    static UINT64   s_deadThreadAllocationCount;
+
     static CrstStatic m_MemoryPressureLock;
 
     static FORCEINLINE UINT64 InterlockedAdd(UINT64 *pAugend, UINT64 addend);
@@ -138,6 +140,8 @@ public:
     static FCDECL2(int,     CollectionCount, INT32 generation, INT32 getSpecialGCCount);
     
     static FCDECL0(INT64,    GetAllocatedBytesForCurrentThread);
+    static 
+    INT64 QCALLTYPE GetTotalAllocatedBytes(BOOL precise);
 
     static 
     int QCALLTYPE StartNoGCRegion(INT64 totalSize, BOOL lohSizeKnown, INT64 lohSize, BOOL disallowFullBlockingGC);
@@ -160,6 +164,8 @@ public:
     static void CheckCollectionCount();
     static void NewRemoveMemoryPressure(UINT64 bytesAllocated);
     static void NewAddMemoryPressure(UINT64 bytesAllocated);
+
+    static UINT64 GetAllocatedBytesForThread(Thread *pThread);
 
 private:
     // Out-of-line helper to avoid EH prolog/epilog in functions that otherwise don't throw.

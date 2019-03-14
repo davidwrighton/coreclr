@@ -5353,6 +5353,8 @@ void ThreadStore::AddThread(Thread *newThread, BOOL bRequiresTSL)
 
     LOG((LF_SYNC, INFO3, "AddThread obtain lock\n"));
 
+    _ASSERTE(GCInterface::GetAllocatedBytesForThread(newThread) == 0);
+
     ThreadStoreLockHolder TSLockHolder(FALSE);
     if (bRequiresTSL)
     {
@@ -5454,6 +5456,10 @@ BOOL ThreadStore::RemoveThread(Thread *target)
         FastInterlockExchangeAdd(
             &Thread::s_threadPoolCompletionCountOverflow,
             target->m_threadPoolCompletionCount);
+
+        FastInterlockExchangeAdd(
+            &GCInterface::s_deadThreadAllocationCount,
+            GCInterface::GetAllocatedBytesForThread(target));
 
         _ASSERTE(s_pThreadStore->m_ThreadCount >= 0);
         _ASSERTE(s_pThreadStore->m_BackgroundThreadCount >= 0);

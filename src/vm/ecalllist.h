@@ -800,6 +800,7 @@ FCFuncStart(gGCInterfaceFuncs)
     FCFuncElement("_ReRegisterForFinalize", GCInterface::ReRegisterForFinalize)
 
     FCFuncElement("_GetAllocatedBytesForCurrentThread", GCInterface::GetAllocatedBytesForCurrentThread)
+    QCFuncElement("_GetTotalAllocatedBytes", GCInterface::GetTotalAllocatedBytes)
 FCFuncEnd()
 
 FCFuncStart(gInteropMarshalFuncs)
