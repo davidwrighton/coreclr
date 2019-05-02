@@ -314,6 +314,7 @@ set(VM_SOURCES_WKS
     eemessagebox.cpp
     eepolicy.cpp
     eetoprofinterfaceimpl.cpp
+    embeddingapi.cpp
     eventpipe.cpp
     eventpipeconfiguration.cpp
     eventpipeevent.cpp

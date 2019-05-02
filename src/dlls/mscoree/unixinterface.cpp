@@ -414,3 +414,36 @@ int coreclr_execute_assembly(
 
     return hr;
 }
+
+int embeddingapi_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes)
+
+//
+// Execute a managed assembly with given arguments
+//
+// Parameters:
+//  hostHandle              - Handle of the host
+//  domainId                - Id of the domain 
+//  argc                    - Number of arguments passed to the executed assembly
+//  argv                    - Array of arguments passed to the executed assembly
+//  managedAssemblyPath     - Path of the managed assembly to execute (or NULL if using a custom entrypoint).
+//  exitCode                - Exit code returned by the executed assembly
+//
+// Returns:
+//  HRESULT indicating status of the operation. S_OK if the assembly was successfully executed
+//
+extern "C"
+DLLEXPORT
+int coreclr_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes)
+{
+    if (apiname == NULL)
+    {
+        return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
+    }
+
+    if (functions == NULL)
+    {
+        return HRESULT_FROM_WIN32(ERROR_INVALID_PARAMETER);
+    }
+
+    return embeddingapi_getapi(apiname, functions, functionsBufferSizeInBytes);
+}

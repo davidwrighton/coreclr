@@ -120,6 +120,11 @@ CORECLR_HOSTING_API(coreclr_execute_assembly,
             const char* managedAssemblyPath,
             unsigned int* exitCode);
 
+CORECLR_HOSTING_API(coreclr_getapi,
+            const char *apiname,
+            void** functions,
+            int functionsBufferSizeInBytes);
+
 #undef CORECLR_HOSTING_API
                       
 #endif // __CORECLR_HOST_H__

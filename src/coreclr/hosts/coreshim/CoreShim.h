@@ -171,6 +171,12 @@ public:
         _In_z_ const char *method,
         _Out_ void **del);
 
+    // See exported function 'coreclr_getapi' from coreclr library
+    HRESULT GetApi(
+        _In_z_ const char *api,
+        _Out_ void** functions,
+        _In_ int sizeOfFunctionsBufferInBytes);
+
 private:
     AutoModule _hmod;
 
@@ -181,6 +187,7 @@ private:
     coreclr_initialize_ptr _initialize;
     coreclr_create_delegate_ptr _create_delegate;
     coreclr_shutdown_ptr _shutdown;
+    coreclr_getapi_ptr _getapi;
 };
 
 #endif /* _CORESHIM_H_ */

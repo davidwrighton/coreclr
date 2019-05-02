@@ -4,6 +4,7 @@ coreclr_execute_assembly
 coreclr_initialize
 coreclr_shutdown
 coreclr_shutdown_2
+coreclr_getapi
 
 ; il{d}asm
 MetaDataGetDispenser

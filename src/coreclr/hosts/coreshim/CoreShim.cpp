@@ -346,6 +346,9 @@ coreclr::coreclr(_Inout_ AutoModule hmod)
 
     _shutdown = (decltype(_shutdown))::GetProcAddress(_hmod, "coreclr_shutdown");
     assert(_shutdown != nullptr);
+
+    _getapi = (decltype(_getapi))::GetProcAddress(_hmod, "coreclr_getapi");
+    assert(_getapi != nullptr);
 }
 
 coreclr::~coreclr()
@@ -411,6 +414,20 @@ HRESULT coreclr::CreateDelegate(
 
     HRESULT hr;
     RETURN_IF_FAILED(_create_delegate(_clrInst, _appDomainId, assembly, type, method, del));
+
+    return S_OK;
+}
+
+HRESULT coreclr::GetApi(
+    _In_z_ const char *api,
+    _Out_ void** functions,
+    _In_ int sizeOfFunctionsBufferInBytes)
+{
+    if (_clrInst == nullptr)
+        return E_NOT_VALID_STATE;
+
+    HRESULT hr;
+    RETURN_IF_FAILED(_getapi(api, functions, sizeOfFunctionsBufferInBytes));
 
     return S_OK;
 }
