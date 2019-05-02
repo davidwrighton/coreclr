@@ -415,7 +415,7 @@ int coreclr_execute_assembly(
     return hr;
 }
 
-int embeddingapi_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes)
+int embeddingapi_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes);
 
 //
 // Execute a managed assembly with given arguments
