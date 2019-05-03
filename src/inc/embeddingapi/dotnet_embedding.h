@@ -24,6 +24,43 @@ typedef _struct_dotnet_fieldid* dotnet_fieldid;
 
 typedef uint32_t dotnet_error;
 
+enum dotnet_bindingflags
+{
+    dotnet_bindingflags_Default = 0,
+    dotnet_bindingflags_IgnoreCase = 1,
+    dotnet_bindingflags_DeclaredOnly = 2,
+    dotnet_bindingflags_Instance = 4,
+    dotnet_bindingflags_Static = 8,
+    dotnet_bindingflags_Public = 16,
+    dotnet_bindingflags_NonPublic = 32,
+    dotnet_bindingflags_FlattenHierarchy = 64,
+    dotnet_bindingflags_InvokeMethod = 256,
+    dotnet_bindingflags_CreateInstance = 512,
+    dotnet_bindingflags_GetField = 1024,
+    dotnet_bindingflags_SetField = 2048,
+    dotnet_bindingflags_GetProperty = 4096,
+    dotnet_bindingflags_SetProperty = 8192,
+    dotnet_bindingflags_PutDispProperty = 16384,
+    dotnet_bindingflags_PutDispRefProperty = 32768,
+    dotnet_bindingflags_ExactBinding = 65536,
+    dotnet_bindingflags_SuppressChangeType = 131072,
+    dotnet_bindingflags_OptionalParamBinding = 262144,
+    dotnet_bindingflags_IgnoreReturn = 16777216,
+    dotnet_bindingflags_DoNotWrapExceptions = 33554432,
+};
+
+struct dotnet_invokeargument
+{
+	dotnet_typeid type;
+	void* data;
+	int32_t cbdata;
+};
+enum dotnet_methodinvoke_flags
+{
+    dotnet_methodinvoke_exception_catch = 0,
+    dotnet_methodinvoke_exception_flowthrough = 1,
+};
+
 typedef dotnet_error (*dotnet_getapi)(const char* apiname, void** pFunctions, int bufferSizeInBytes);
 
 typedef dotnet_error(*_dotnet_uint32_out_voidptr)(uint32_t,void**);
@@ -44,6 +81,14 @@ typedef dotnet_error(*_dotnet_frame_object_out_typeid)(dotnet_frame,dotnet_objec
 typedef dotnet_error(*_dotnet_frame_object_out_pin_out_voidptr)(dotnet_frame,dotnet_object,dotnet_pin*,void**);
 typedef dotnet_error(*_dotnet_frame_pin)(dotnet_frame,dotnet_pin);
 typedef dotnet_error(*_dotnet_frame_utf8str_out_object)(dotnet_frame,const char *,dotnet_object*);
+typedef dotnet_error(*_dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method)(dotnet_frame, const char*, dotnet_bindingflags, dotnet_object*, int32_t, dotnet_object*);
+typedef dotnet_error(*_dotnet_object_out_typeid)(dotnet_object,dotnet_typeid*);
+typedef dotnet_error(*_dotnet_object_out_methodid)(dotnet_object,dotnet_methodid*);
+typedef dotnet_error(*_dotnet_object_out_fieldid)(dotnet_object,dotnet_fieldid*);
+typedef dotnet_error(*_dotnet_fieldid_out_typeid)(dotnet_fieldid,dotnet_typeid*);
+typedef dotnet_error(*_dotnet_frame_typeid_out_object)(dotnet_frame,dotnet_typeid,dotnet_object*);
+typedef dotnet_error(*_dotnet_frame_methodid_out_object)(dotnet_frame,dotnet_methodid,dotnet_object*);
+typedef dotnet_error(*_dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags)(dotnet_frame,dotnet_methodid,dotnet_invokeargument*,int32_t,dotnet_methodinvoke_flags);
 
 #define DOTNET_V1_API_GROUP "DOTNET.0"
 struct dotnet_embedding_api_group
@@ -79,7 +124,21 @@ struct dotnet_embedding_api_group
 
     // Reflection surface
     _dotnet_frame_utf8str_out_object type_gettype;
-};
+    _dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method type_getmethod;
 
+    // Non-managed type system structure access
+    _dotnet_object_out_typeid get_typeid;
+    _dotnet_object_out_methodid get_methodid;
+    _dotnet_object_out_fieldid get_fieldid;
+    _dotnet_fieldid_out_typeid get_field_typeid;
+    _dotnet_frame_typeid_out_object get_typeid_lifetime_object;
+    _dotnet_frame_methodid_out_object get_methodid_lifetime_object;
+    
+    // String api
+    _dotnet_frame_utf8str_out_object string_alloc_utf8;
+
+    // Method Invoke
+    _dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags method_invoke;
+};
 
 #endif // __DOTNET_EMBEDDING_H__
