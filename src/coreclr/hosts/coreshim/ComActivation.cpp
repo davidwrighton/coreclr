@@ -38,6 +38,22 @@ namespace
     }
 }
 
+extern "C" int coreclr_getapi(
+    _In_z_ const char *api,
+    _Out_ void** functions,
+    _In_ int sizeOfFunctionsBufferInBytes)
+{
+    HRESULT hr;
+
+    coreclr *inst;
+    RETURN_IF_FAILED(coreclr::GetCoreClrInstance(&inst));
+
+    if (hr == S_OK)
+        RETURN_IF_FAILED(InitializeCoreClr(inst));
+
+    return inst->GetApi(api, functions, sizeOfFunctionsBufferInBytes);
+}
+
 STDAPI DllGetClassObject(
     _In_ REFCLSID rclsid,
     _In_ REFIID riid,
