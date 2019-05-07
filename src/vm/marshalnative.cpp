@@ -263,32 +263,10 @@ FCIMPL1(FC_BOOL_RET, MarshalNative::IsPinnable, Object* obj)
     if (obj == NULL)
         FC_RETURN_BOOL(TRUE);
 
-    if (obj->GetMethodTable() == g_pStringClass)
+    if (obj->GetMethodTable()->IsPinnable())
         FC_RETURN_BOOL(TRUE);
-
-#ifdef FEATURE_UTF8STRING
-    if (obj->GetMethodTable() == g_pUtf8StringClass)
-        FC_RETURN_BOOL(TRUE);
-#endif // FEATURE_UTF8STRING
-
-    if (obj->GetMethodTable()->IsArray())
-    {
-        BASEARRAYREF asArray = (BASEARRAYREF)ObjectToOBJECTREF(obj);
-        if (CorTypeInfo::IsPrimitiveType(asArray->GetArrayElementType()))
-            FC_RETURN_BOOL(TRUE);
-
-        TypeHandle th = asArray->GetArrayElementTypeHandle();
-        if (!th.IsTypeDesc())
-        {
-            MethodTable *pMT = th.AsMethodTable();
-            if (pMT->IsValueType() && pMT->IsBlittable())
-                FC_RETURN_BOOL(TRUE);
-        }
-
+    else
         FC_RETURN_BOOL(FALSE);
-    }
-
-    FC_RETURN_BOOL(obj->GetMethodTable()->IsBlittable());
 }
 FCIMPLEND
 

@@ -1742,6 +1742,8 @@ public:
         return HasComponentSize() && !IsArray() && RawGetComponentSize() == 2;
     }
 
+    BOOL IsPinnable();
+
     BOOL            HasComponentSize() const
     {
         LIMITED_METHOD_DAC_CONTRACT;
@@ -2800,8 +2802,10 @@ public:
     // or an ArrayTypeDesc, or on an object reference that is known to be an array,
     // e.g. a BASEARRAYREF.
     //
-    // At the moment only the object[] MethodTable is shared between array types.
-    // In the future the amount of sharing of method tables is likely to be increased.
+    // At one point the object[] MethodTable were shared between array types.
+    // However, this is no longer the case, as it was shown to not be an overall
+    // improvement to the system. It is now safe to use GetApproxArrayElementTypeHandle()
+    // and expect to recieve an exact result.
     CorElementType GetArrayElementType();
     DWORD GetRank(); 
 

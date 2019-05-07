@@ -10410,3 +10410,32 @@ BOOL MethodTable::IsInheritanceChainFixedInCurrentVersionBubble()
 }
 
 #endif // FEATURE_READYTORUN_COMPILER
+
+BOOL MethodTable::IsPinnable()
+{
+    LIMITED_METHOD_CONTRACT;
+
+    if (this == g_pStringClass)
+        return TRUE;
+
+#ifdef FEATURE_UTF8STRING
+    if (this == g_pUtf8StringClass)
+        return TRUE;
+#endif // FEATURE_UTF8STRING
+
+    if (IsArray())
+    {
+        TypeHandle th = GetApproxArrayElementTypeHandle();
+        if (!th.IsTypeDesc())
+        {
+            MethodTable *pMT = th.AsMethodTable();
+            if (pMT->IsValueType() && pMT->IsBlittable())
+                return TRUE;
+        }
+        return FALSE;
+    }
+    else
+    {
+        return IsBlittable();
+    }
+}
