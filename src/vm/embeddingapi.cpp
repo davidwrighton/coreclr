@@ -6,7 +6,6 @@
 //
 
 #include "common.h"
-#include <embeddingapi/dotnet_embedding.h>
 
 // Utility functions
 dotnet_error embeddingapi_alloc(uint32_t cb, void ** bytes)
