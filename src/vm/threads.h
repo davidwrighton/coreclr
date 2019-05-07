@@ -183,6 +183,7 @@ typedef void(*ADCallBackFcnType)(LPVOID);
 #include "threaddebugblockinginfo.h"
 #include "interoputil.h"
 #include "eventtrace.h"
+#include "embeddingapi_impl.h"
 
 #ifdef FEATURE_PERFTRACING
 class EventPipeBufferList;
@@ -1542,6 +1543,8 @@ public:
     // Unique thread id used for thin locks - kept as small as possible, as we have limited space
     // in the object header to store it.
     DWORD                m_ThreadId;
+
+    FrameForEmbeddingApi *m_pEmbeddingApiFrame;
 
 
     // RWLock state

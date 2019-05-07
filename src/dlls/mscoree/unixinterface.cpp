@@ -415,7 +415,7 @@ int coreclr_execute_assembly(
     return hr;
 }
 
-int embeddingapi_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes);
+uint32_t embeddingapi_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes);
 
 //
 // Execute a managed assembly with given arguments
@@ -433,7 +433,7 @@ int embeddingapi_getapi(const char *apiname, void** functions, int functionsBuff
 //
 extern "C"
 DLLEXPORT
-int coreclr_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes)
+uint32_t coreclr_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes)
 {
     if (apiname == NULL)
     {

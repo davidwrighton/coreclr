@@ -1300,6 +1300,8 @@ Thread::Thread()
     m_ulEnablePreemptiveGCCount  = 0;
 #endif
 
+    m_pEmbeddingApiFrame = NULL;
+
     m_dwLockCount = 0;
     m_dwBeginLockCount = 0;
 
