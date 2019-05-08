@@ -760,6 +760,8 @@ dotnet_error embeddingapi_read_static_field(dotnet_frame frame, dotnet_fieldid f
 
     GCX_COOP();
 
+    pFD->GetApproxEnclosingMethodTable_NoLogging()->ChekRunClassInitThrowing();
+
     OBJECTREF objRef = embeddingapi_get_target(obj);
 
     return embeddingapi_impl_readmanagedmem(frame, et, th, pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
@@ -792,6 +794,8 @@ dotnet_error embeddingapi_write_static_field(dotnet_object obj, void*pData, int3
 
     GCX_COOP();
 
+    pFD->GetApproxEnclosingMethodTable_NoLogging()->ChekRunClassInitThrowing();
+
     return embeddingapi_impl_writemanagedmem(et, th, pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
 }
 
@@ -802,11 +806,11 @@ dotnet_error embeddingapi_read_field_on_struct(void *structure, dotnet_fieldid f
     if (field == NULL)
         return E_INVALIDARG;
     
-    if (!field->GetApproxEnclosingMethodTable_NoLogging()->IsValueType())
+    if (!pFD->GetApproxEnclosingMethodTable_NoLogging()->IsValueType())
         return E_INVALIDARG;
 
-    DWORD offset = field->GetOffset();
-    UINT size = field->GetSize();
+    DWORD offset = pFD->GetOffset();
+    UINT size = pFD->GetSize();
 
     if (cbData < size)
         return E_INVALIDARG;
@@ -822,11 +826,11 @@ dotnet_error embeddingapi_write_field_on_struct(void *structure, dotnet_fieldid 
     if (field == NULL)
         return E_INVALIDARG;
     
-    if (!field->GetApproxEnclosingMethodTable_NoLogging()->IsValueType())
+    if (!pFD->GetApproxEnclosingMethodTable_NoLogging()->IsValueType())
         return E_INVALIDARG;
 
-    DWORD offset = field->GetOffset();
-    UINT size = field->GetSize();
+    DWORD offset = pFD->GetOffset();
+    UINT size = pFD->GetSize();
 
     if (cbData < size)
         return E_INVALIDARG;
