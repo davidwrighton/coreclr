@@ -27,7 +27,7 @@ dotnet_error embeddingapi_free(void * bytes)
 
 // thread local handle functionality
 
-ExpandoEmbeddingApiFrame::ExpandoEmbeddingApiFrame() : _expando(NULL), _remainingInitialFreeElements(s_elementCount)
+ExpandoEmbeddingApiFrame::ExpandoEmbeddingApiFrame() : _expando(NULL), _remainingFreeElements(s_elementCount)
 {
 }
 
@@ -36,13 +36,13 @@ ExpandoEmbeddingApiFrame::ExpandoEmbeddingApiFrame() : _expando(NULL), _remainin
     ExpandoEmbeddingApiFrame* pFrame = *ppFrame;
     if (pFrame->_remainingFreeElements > 0)
     {
-        pFrame->_remainingFreeElements--;
-        pFrame->_elements[_remainingFreeElements] = newValue;
+        pFrame->_remainingFreeElements = pFrame->_remainingFreeElements - 1;
+        pFrame->_elements[pFrame->_remainingFreeElements] = newValue;
         return true;
     }
     else
     {
-        ExpandoEmbeddingApiFrame* pNewFrame = new(nothrow) ExpandoEmbeddingApiFrame(pFrame);
+        ExpandoEmbeddingApiFrame* pNewFrame = new(nothrow) ExpandoEmbeddingApiFrame;
         if (pNewFrame == NULL)
             return false;
 
@@ -50,25 +50,27 @@ ExpandoEmbeddingApiFrame::ExpandoEmbeddingApiFrame() : _expando(NULL), _remainin
         pNewFrame->_elements[s_elementCount - 1] = newValue;
         pFrame->_expando = pNewFrame;
         *ppFrame = pNewFrame;
+        return true;
     }
 }
 
 void ExpandoEmbeddingApiFrame::GCPromote(promote_func* fn, ScanContext* sc)
 {
-    for (int i = 15; i >= _remainingFreeElements; i--)
+    for (unsigned i = 16; i > _remainingFreeElements; i--)
     {
-        UINT_PTR ptrInFrame = (UINT_PTR)_elements[i];
+        UINT_PTR ptrInFrame = (UINT_PTR)_elements[i - 1];
         switch (ptrInFrame & 0x3)
         {
         case 0:
-            fn((Object**)&_elements[i], sc, 0);
+            fn((Object**)&_elements[i - 1], sc, 0);
             break;
         case 1:
-            fn((Object**)&_elements[i], sc, GC_CALL_INTERIOR | GC_CALL_PINNED);
+            fn((Object**)&_elements[i - 1], sc, GC_CALL_INTERIOR | GC_CALL_PINNED);
             break;
 
         default:
             // Do nothing, these are in the freelist
+            break;
         }
     }
 }
@@ -78,9 +80,9 @@ ExpandoEmbeddingApiFrame::~ExpandoEmbeddingApiFrame()
     delete _expando;
 }
 
-FrameForEmbeddingApi::FrameForEmbeddingApi(Thread *thread) :_expando(&_initialFrame), _nextFreeElement(NULL), _thread(thread), _next(thread->EmbeddingApiFrame)
+FrameForEmbeddingApi::FrameForEmbeddingApi(Thread *thread) :_expando(&_initialFrame), _nextFreeElement(NULL), _thread(thread), _next(thread->m_pEmbeddingApiFrame)
 {
-    thread->EmbeddingApiFrame = this;
+    thread->m_pEmbeddingApiFrame = this;
 }
 
 void FrameForEmbeddingApi::GCPromote(promote_func* fn, ScanContext* sc)
@@ -112,7 +114,7 @@ bool FrameForEmbeddingApi::AllocEntry(void *newValue, void **allocatedEntry)
 void FrameForEmbeddingApi::FreeEntry(void *entryToFree)
 {
     _ASSERTE(entryToFree != NULL);
-    _ASSERTE(((UINT_PTR)entryToFree) & 0x3 == 0);
+    _ASSERTE((((UINT_PTR)entryToFree) & 0x3) == 0);
     FreeElement *newFreeElement = (FreeElement*)entryToFree;
     newFreeElement->_nextFreeElement = ((UINT_PTR)_nextFreeElement) + 2;
     _nextFreeElement = newFreeElement;
@@ -120,7 +122,7 @@ void FrameForEmbeddingApi::FreeEntry(void *entryToFree)
 
 bool FrameForEmbeddingApi::Pop()
 {
-    if (_thread->EmbeddingApiFrame == this))
+    if (_thread->m_pEmbeddingApiFrame == this)
     {
         delete this;
         return true;
@@ -133,7 +135,7 @@ bool FrameForEmbeddingApi::Pop()
 
 FrameForEmbeddingApi::~FrameForEmbeddingApi()
 {
-    _thread->EmbeddingApiFrame = this->_next;
+    _thread->m_pEmbeddingApiFrame = this->_next;
 }
 
 dotnet_error embeddingapi_push_frame(dotnet_frame *frame)
@@ -147,6 +149,8 @@ dotnet_error embeddingapi_push_frame(dotnet_frame *frame)
     }
     CONTRACTL_END;
 
+    dotnet_error result = 0;
+
     BEGIN_GETTHREAD_ALLOWED;
     Thread *pThread = GetThreadNULLOk();
 
@@ -156,7 +160,7 @@ dotnet_error embeddingapi_push_frame(dotnet_frame *frame)
     GCX_COOP();
     *frame = (dotnet_frame)new(nothrow) FrameForEmbeddingApi(pThread);
 
-    dotnet_error result = (*frame) == NULL ? E_OUTOFMEMORY : S_OK;
+    result = (*frame) == NULL ? E_OUTOFMEMORY : S_OK;
 
     END_GETTHREAD_ALLOWED;
 
@@ -166,12 +170,13 @@ dotnet_error embeddingapi_push_frame(dotnet_frame *frame)
 FCIMPL0(dotnet_frame, EmbeddingApi::nPushFrame)
 {
     FCALL_CONTRACT;
-    dotnet_frame newFrame = (dotnet_frame)new(nothrow) FrameForEmbeddingApi(pThread);
+    dotnet_frame newFrame = (dotnet_frame)new(nothrow) FrameForEmbeddingApi(GetThread());
     if (newFrame != NULL)
         return newFrame;
     else
         FCThrow(kOutOfMemoryException);
 }
+FCIMPLEND;
 
 dotnet_error embeddingapi_push_frame_collect_on_return(dotnet_frame *frame)
 {
@@ -195,7 +200,7 @@ dotnet_error embeddingapi_pop_frame(dotnet_frame frame)
     return actualFrame->Pop() ? S_OK : E_INVALIDARG;
 }
 
-FCIMPL0(void, EmbeddingApi::nPopFrame, dotnet_frame frame)
+FCIMPL1(void, EmbeddingApi::nPopFrame, dotnet_frame frame)
 {
     FCALL_CONTRACT;
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
@@ -203,14 +208,10 @@ FCIMPL0(void, EmbeddingApi::nPopFrame, dotnet_frame frame)
         return;
     else
     {
-        COMPlusThrowNonLocalized(kInv
+        FCThrowVoid(kInvalidOperationException);
     }
-    dotnet_frame newFrame = (dotnet_frame)new(nothrow) FrameForEmbeddingApi(pThread);
-    if (newFrame != NULL)
-        return newFrame;
-    else
-        FCThrow(kInvalidOperationException);
 }
+FCIMPLEND;
 
 dotnet_error embeddingapi_handle_free(dotnet_frame frame, dotnet_object object)
 {
@@ -224,7 +225,7 @@ dotnet_error embeddingapi_handle_free(dotnet_frame frame, dotnet_object object)
     CONTRACTL_END;
 
     if (object == NULL)
-        return;
+        return S_OK;
 
     GCX_COOP();
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
@@ -232,7 +233,7 @@ dotnet_error embeddingapi_handle_free(dotnet_frame frame, dotnet_object object)
     return S_OK;
 }
 
-HRESULT embeddingapi_handle_alloc(dotnet_frame frame, OBJECTREF objRef, dotnet_object *handle)
+dotnet_error embeddingapi_handle_alloc(dotnet_frame frame, OBJECTREF objRef, dotnet_object *handle)
 {
     // THIS ISN'T public api surface, but it is used by logic which produces new embedding handles
     CONTRACTL
@@ -248,26 +249,28 @@ HRESULT embeddingapi_handle_alloc(dotnet_frame frame, OBJECTREF objRef, dotnet_o
         return NULL;
     
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
-    if (actualFrame->AllocEntry(objRef->GetAddress(), handle))
+    if (actualFrame->AllocEntry(objRef->GetAddress(), (void**)handle))
         return S_OK;
     else
         return E_OUTOFMEMORY;
 }
 
-FCIMPL1(dotnet_object, EmbeddingApi::nAllocHandle, dotnet_frame frame, Object* objectUNSAFE)
+FCIMPL2(dotnet_object, EmbeddingApi::nAllocHandle, dotnet_frame frame, Object* objectUNSAFE)
 {
     FCALL_CONTRACT;
 
     if (objectUNSAFE == NULL)
         return NULL;
-    
+
+    OBJECTREF objRef = ObjectToOBJECTREF(objectUNSAFE);
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
     dotnet_object retVal;
-    if (!actualFrame->AllocEntry(objRef->GetAddress(), &retVal))
+    if (!actualFrame->AllocEntry(objRef->GetAddress(), (void**)&retVal))
         FCThrow(kOutOfMemoryException);
 
     return retVal;
 }
+FCIMPLEND;
 
 FCIMPL1(Object*, EmbeddingApi::nGetTarget, dotnet_object obj)
 {
@@ -276,6 +279,7 @@ FCIMPL1(Object*, EmbeddingApi::nGetTarget, dotnet_object obj)
 
     return *(Object**)obj;
 }
+FCIMPLEND;
 
 dotnet_error embeddingapi_handle_pin(dotnet_frame frame, dotnet_object object, dotnet_pin* pin, void**data)
 {
@@ -304,14 +308,14 @@ dotnet_error embeddingapi_handle_pin(dotnet_frame frame, dotnet_object object, d
 
     if (pMT->HasComponentSize())
     {
-        *data = objRef->GetAddress() + ArrayBase::GetDataPtrOffset(pMT)
+        *data = objRef->GetAddress() + ArrayBase::GetDataPtrOffset(pMT);
     }
     else
     {
         *data = objRef->GetData();
     }
 
-    if (actualFrame->AllocEntry(objRef->GetAddress() + 1, pin)) // The +1 provides information to the GC walker in the frame to indicate this is a pinned reference.
+    if (actualFrame->AllocEntry(objRef->GetAddress() + 1, (void**)pin)) // The +1 provides information to the GC walker in the frame to indicate this is a pinned reference.
         return S_OK;
     else
         return E_OUTOFMEMORY;
@@ -335,27 +339,6 @@ dotnet_error embeddingapi_handle_unpin(dotnet_frame frame, dotnet_pin pin)
 }
 
 // Id access surface
-dotnet_error embeddingapi_get_typeid(dotnet_object type, dotnet_typeid* typeid)
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
-    if (type == NULL)
-        return E_INVALIDARG;
-    
-    GCX_COOP();
-    REFLECTCLASSBASEREF typeObj = (REFLECTCLASSBASEREF)ObjectToOBJECTREF(*(Object**)type);
-    TypeHandle th = typeObj->GetType();
-    *typeid = (dotnet_typeid)th.AsPtr();
-    return S_OK;
-}
-
 dotnet_error embeddingapi_get_methodid(dotnet_object method, dotnet_methodid* methodid)
 {
     CONTRACTL
@@ -374,6 +357,27 @@ dotnet_error embeddingapi_get_methodid(dotnet_object method, dotnet_methodid* me
     REFLECTMETHODREF methodObj = (REFLECTMETHODREF)ObjectToOBJECTREF(*(Object**)method);
     MethodDesc *pMD = methodObj->GetMethod();
     *methodid = (dotnet_methodid)pMD;
+    return S_OK;
+}
+
+dotnet_error embeddingapi_get_typeid(dotnet_object typeObject, dotnet_typeid* typeidVar)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    if (typeObject == NULL)
+        return E_INVALIDARG;
+    
+    GCX_COOP();
+    REFLECTCLASSBASEREF typeObj = (REFLECTCLASSBASEREF)ObjectToOBJECTREF(*(Object**)typeObject);
+    TypeHandle th = typeObj->GetType();
+    *typeidVar = (dotnet_typeid)th.AsPtr();
     return S_OK;
 }
 
@@ -398,7 +402,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
     for (int i = 0; i < (countOfArguments - 1); i++)
     {
         dotnet_invokeargument invokeArg = arguments[i+1];
-        TypeHandle argumentTypeHandle = TypeHandle((void*)invokeArg.type);
+        TypeHandle argumentTypeHandle = TypeHandle::FromPtr((void*)invokeArg.type);
         pArgSlots[i] = (ARG_SLOT)0;
 
         // 8 possible cases (NOTE: the concept of Primitive or enum value is the calling convention concept, not strictly the managed construct)
@@ -460,7 +464,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
         {
             // Case 1
             _ASSERTE(argumentTypeHandle.GetSize() <= sizeof(ARG_SLOT));
-            memcpy(pArgSlots[i], invokeArg.data, argumentTypeHandle.GetSize());
+            memcpy(&pArgSlots[i], invokeArg.data, argumentTypeHandle.GetSize());
         }
     }
 
@@ -469,8 +473,8 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
     // There are a variety of return paths...
     // Handle two of them
 
-    TypeHandle returnTypeHandle = TypeHandle((void*)arguments[0].type);
-    CorElementType etReturnType = thByRefOf.GetInternalCorElementType();
+    TypeHandle returnTypeHandle = TypeHandle::FromPtr((void*)arguments[0].type);
+    CorElementType etReturnType = returnTypeHandle.GetInternalCorElementType();
 
     if (CorTypeInfo::IsObjRef(etReturnType))
     {
@@ -483,7 +487,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
     else
     {
         // Copy argslot contents back into data
-        memcpy(arguments[0].data, returnValue, returnTypeHandle.GetSize());
+        memcpy(arguments[0].data, &returnValue, returnTypeHandle.GetSize());
         return S_OK;
     }
 }
@@ -519,7 +523,7 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
 
     GCX_COOP();
 
-    if (strcmp(apiname, DOTNET_V1_API_GROUP)
+    if (strcmp(apiname, DOTNET_V1_API_GROUP))
     {
         if (sizeof(dotnet_embedding_api_group) > functionsBufferSizeInBytes)
             return E_INVALIDARG;
@@ -532,13 +536,13 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->push_frame = embeddingapi_push_frame;
         pApi->push_frame_collect_on_return = embeddingapi_push_frame_collect_on_return;
         pApi->pop_frame = embeddingapi_pop_frame;
-        pApi->handle_free = embeddingapi_handle_pin;
+        pApi->handle_free = embeddingapi_handle_free;
         pApi->handle_pin = embeddingapi_handle_pin;
         pApi->handle_unpin = embeddingapi_handle_unpin;
 
-        pApi->type_gettype = GetApiFromManaged(EmbeddingApi::Type_GetType;
-        pApi->type_getmethod = GetApiFromManaged(EmbeddingApi::Type_GetMethod);
-        pApi->string_alloc_utf8 = GetApiFromManaged(EmbeddingApi::String_AllocUtf8);
+        pApi->type_gettype = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::Type_GetType);
+        pApi->type_getmethod = (_dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method)GetApiFromManaged(EmbeddingApi::Type_GetMethod);
+        pApi->string_alloc_utf8 = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::String_AllocUtf8);
 
         pApi->get_typeid = embeddingapi_get_typeid;
         pApi->get_methodid = embeddingapi_get_methodid;

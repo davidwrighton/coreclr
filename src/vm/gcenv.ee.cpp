@@ -150,7 +150,7 @@ static void ScanStackRoots(Thread * pThread, promote_func* fn, ScanContext* sc)
 
     // Promote embedding api frames
     if (pThread->m_pEmbeddingApiFrame != NULL)
-        pThread->GCPromote(fn, sc);
+        pThread->m_pEmbeddingApiFrame->GCPromote(fn, sc);
 }
 
 void GCToEEInterface::GcScanRoots(promote_func* fn, int condemned, int max_gen, ScanContext* sc)

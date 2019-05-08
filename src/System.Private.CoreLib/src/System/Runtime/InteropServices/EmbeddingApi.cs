@@ -5,6 +5,7 @@
 
 using System;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.StubHelpers;
 
 namespace System.Runtime.InteropServices
@@ -12,7 +13,7 @@ namespace System.Runtime.InteropServices
     unsafe class EmbeddingApi
     {
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern IntPtr nAllocHandle(IntPtr frame, object? obj);
+        private static extern IntPtr nAllocHandle(IntPtr frame, object obj);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern object nGetTarget(IntPtr objHandle);
@@ -28,7 +29,7 @@ namespace System.Runtime.InteropServices
         {
             try
             {
-                string? s = UTF8Marshaler.ConvertToManaged(utf8Str);
+                string s = UTF8Marshaler.ConvertToManaged(utf8Str);
                 Type t = Type.GetType(s);
                 *result = nAllocHandle(frame, t);
                 return 0;
@@ -44,11 +45,11 @@ namespace System.Runtime.InteropServices
         {
             try
             {
-                Type type = nGetTarget(typeHandle);
-                string? methodName = UTF8Marshaler.ConvertToManaged(methodNameUtf8);
+                Type type = (Type)nGetTarget(typeHandle);
+                string methodName = UTF8Marshaler.ConvertToManaged(methodNameUtf8);
                 Type[] typeOfArguments = new Type[cTypes];
                 for (int i = 0; i < cTypes; i++)
-                    typeOfArguments = nGetTarget(types[i]);
+                    typeOfArguments[i] = (Type)nGetTarget(types[i]);
                 MethodInfo method = type.GetMethod(methodName, flags, null, typeOfArguments, null);
                 *methodHandle = nAllocHandle(frame, method);
                 return 0;
@@ -64,7 +65,7 @@ namespace System.Runtime.InteropServices
         {
             try
             {
-                string? str = UTF8Marshaler.ConvertToManaged(utf8Str);
+                string str = UTF8Marshaler.ConvertToManaged(utf8Str);
                 *result = nAllocHandle(frame, str);
                 return 0;
             }
@@ -89,9 +90,9 @@ namespace System.Runtime.InteropServices
 
             switch (helper)
             {
-                case GetApiHelperEnum.Type_GetType: del = (Type_GetTypeDelegate)Type_GetType;
-                case GetApiHelperEnum.Type_GetMethod: del = (Type_GetMethodDelegate)Type_GetMethod;
-                case GetApiHelperEnum.String_AllocUtf8: del = (String_AllocUtf8Delegate)String_AllocUtf8;
+                case GetApiHelperEnum.Type_GetType: del = (Type_GetTypeDelegate)Type_GetType; break;
+                case GetApiHelperEnum.Type_GetMethod: del = (Type_GetMethodDelegate)Type_GetMethod; break;
+                case GetApiHelperEnum.String_AllocUtf8: del = (String_AllocUtf8Delegate)String_AllocUtf8; break;
             }
 
             return Marshal.GetFunctionPointerForDelegate(del);

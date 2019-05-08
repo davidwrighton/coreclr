@@ -63,6 +63,7 @@ FCFuncStart(gEmbeddingApiFuncs)
     FCFuncElement("nPushFrame",              EmbeddingApi::nPushFrame)
     FCFuncElement("nPopFrame",               EmbeddingApi::nPopFrame)
     FCFuncElement("nAllocHandle",            EmbeddingApi::nAllocHandle)
+    FCFuncElement("nGetTarget",              EmbeddingApi::nGetTarget)
 FCFuncEnd()
 
 FCFuncStart(gDependentHandleFuncs)

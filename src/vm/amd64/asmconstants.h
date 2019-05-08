@@ -151,10 +151,10 @@ ASMCONSTANTS_C_ASSERT(OFFSETOF__Thread__m_dwLockCount
 ASMCONSTANTS_C_ASSERT(OFFSETOF__Thread__m_ThreadId
                     == offsetof(Thread, m_ThreadId));
 
-#define               OFFSET__Thread__m_alloc_context__alloc_ptr 0x58
+#define               OFFSET__Thread__m_alloc_context__alloc_ptr 0x60
 ASMCONSTANTS_C_ASSERT(OFFSET__Thread__m_alloc_context__alloc_ptr == offsetof(Thread, m_alloc_context) + offsetof(gc_alloc_context, alloc_ptr));
 
-#define               OFFSET__Thread__m_alloc_context__alloc_limit 0x60
+#define               OFFSET__Thread__m_alloc_context__alloc_limit 0x68
 ASMCONSTANTS_C_ASSERT(OFFSET__Thread__m_alloc_context__alloc_limit == offsetof(Thread, m_alloc_context) + offsetof(gc_alloc_context, alloc_limit));
 
 #define               OFFSETOF__gc_alloc_context__alloc_ptr 0x0

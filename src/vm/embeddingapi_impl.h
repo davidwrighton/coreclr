@@ -18,16 +18,17 @@ struct FreeElement
 
 class ExpandoEmbeddingApiFrame
 {
-    const int s_elementCount = 16;
+    const static int s_elementCount = 16;
     ExpandoEmbeddingApiFrame *_expando;
     UINT32 _remainingFreeElements;
     void *_elements[s_elementCount];
 public:
-    ExpandoEmbeddingApiFrame() : _expando(NULL), _remainingInitialFreeElements(s_elementCount);
+    friend class FrameForEmbeddingApi;
+    ExpandoEmbeddingApiFrame();
     static bool AllocEntry(ExpandoEmbeddingApiFrame** ppFrame, void *newValue, void **allocatedEntry);
     void GCPromote(promote_func* fn, ScanContext* sc);
     ~ExpandoEmbeddingApiFrame();
-}
+};
 
 class FrameForEmbeddingApi
 {
@@ -38,13 +39,13 @@ class FrameForEmbeddingApi
     ExpandoEmbeddingApiFrame _initialFrame;
 
 public:
-    FrameForEmbeddingApi(Thread *thread) :_expando(&_initialFrame), _nextFreeElement(NULL), _thread(thread), _next(thread->EmbeddingApiFrame);
+    FrameForEmbeddingApi(Thread *thread);
     void GCPromote(promote_func* fn, ScanContext* sc);
     bool AllocEntry(void *newValue, void **allocatedEntry);
     void FreeEntry(void *entryToFree);
     bool Pop();
     ~FrameForEmbeddingApi();
-}
+};
 
 #include "fcall.h"
 
