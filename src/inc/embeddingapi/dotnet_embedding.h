@@ -81,7 +81,7 @@ typedef dotnet_error(*_dotnet_frame_object_out_typeid)(dotnet_frame,dotnet_objec
 typedef dotnet_error(*_dotnet_frame_object_out_pin_out_voidptr)(dotnet_frame,dotnet_object,dotnet_pin*,void**);
 typedef dotnet_error(*_dotnet_frame_pin)(dotnet_frame,dotnet_pin);
 typedef dotnet_error(*_dotnet_frame_utf8str_out_object)(dotnet_frame,const char *,dotnet_object*);
-typedef dotnet_error(*_dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method)(dotnet_frame, const char*, dotnet_bindingflags, dotnet_object*, int32_t, dotnet_object*);
+typedef dotnet_error(*_dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method)(dotnet_frame, dotnet_object, const char*, dotnet_bindingflags, dotnet_object*, int32_t, dotnet_object*);
 typedef dotnet_error(*_dotnet_object_out_typeid)(dotnet_object,dotnet_typeid*);
 typedef dotnet_error(*_dotnet_object_out_methodid)(dotnet_object,dotnet_methodid*);
 typedef dotnet_error(*_dotnet_object_out_fieldid)(dotnet_object,dotnet_fieldid*);

@@ -73,10 +73,10 @@ void CallWriteLineHelloWorld()
     IF_FAIL_GO(dotnet.type_gettype(frame, "System.Void,System.Runtime", &void_type));
     IF_FAIL_GO(dotnet.get_typeid(void_type, &void_typeid));
 
-    dotnet_object argumentsToConsoleWriteline[] = { void_type,object_type };
+    dotnet_object argumentsToConsoleWriteline[] = { object_type };
     dotnet_object writeline;
     dotnet_methodid writeline_id;
-    IF_FAIL_GO(dotnet.type_getmethod(frame, "WriteLine", (dotnet_bindingflags)(dotnet_bindingflags_Public | dotnet_bindingflags_Static), argumentsToConsoleWriteline, 2, &writeline));
+    IF_FAIL_GO(dotnet.type_getmethod(frame, console_type, "WriteLine", (dotnet_bindingflags)(dotnet_bindingflags_Public | dotnet_bindingflags_Static), argumentsToConsoleWriteline, 1, &writeline));
     IF_FAIL_GO(dotnet.get_methodid(writeline, &writeline_id));
 
     // Create helloworld string

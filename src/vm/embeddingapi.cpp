@@ -37,8 +37,7 @@ ExpandoEmbeddingApiFrame::ExpandoEmbeddingApiFrame() : _expando(NULL), _remainin
     if (pFrame->_remainingFreeElements > 0)
     {
         pFrame->_remainingFreeElements = pFrame->_remainingFreeElements - 1;
-        pFrame->_elements[pFrame->_remainingFreeElements] = newValue;
-        return true;
+        *allocatedEntry = &pFrame->_elements[pFrame->_remainingFreeElements];
     }
     else
     {
@@ -47,11 +46,13 @@ ExpandoEmbeddingApiFrame::ExpandoEmbeddingApiFrame() : _expando(NULL), _remainin
             return false;
 
         pNewFrame->_remainingFreeElements = s_elementCount - 1;
-        pNewFrame->_elements[s_elementCount - 1] = newValue;
+        *allocatedEntry = &pNewFrame->_elements[s_elementCount - 1];
         pFrame->_expando = pNewFrame;
         *ppFrame = pNewFrame;
-        return true;
     }
+
+    **(void***)allocatedEntry = newValue;
+    return true;
 }
 
 void ExpandoEmbeddingApiFrame::GCPromote(promote_func* fn, ScanContext* sc)
@@ -523,7 +524,7 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
 
     GCX_COOP();
 
-    if (strcmp(apiname, DOTNET_V1_API_GROUP))
+    if (strcmp(apiname, DOTNET_V1_API_GROUP) == 0)
     {
         if (sizeof(dotnet_embedding_api_group) > functionsBufferSizeInBytes)
             return E_INVALIDARG;
