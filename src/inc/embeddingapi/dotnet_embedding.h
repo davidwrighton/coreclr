@@ -89,6 +89,11 @@ typedef dotnet_error(*_dotnet_fieldid_out_typeid)(dotnet_fieldid,dotnet_typeid*)
 typedef dotnet_error(*_dotnet_frame_typeid_out_object)(dotnet_frame,dotnet_typeid,dotnet_object*);
 typedef dotnet_error(*_dotnet_frame_methodid_out_object)(dotnet_frame,dotnet_methodid,dotnet_object*);
 typedef dotnet_error(*_dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags)(dotnet_frame,dotnet_methodid,dotnet_invokeargument*,int32_t,dotnet_methodinvoke_flags);
+typedef dotnet_error(*_dotnet_frame_object_fieldid_voidptr_int32)(dotnet_frame,dotnet_object,dotnet_fieldid,void*,int32_t);
+typedef dotnet_error(*_dotnet_object_fieldid_voidptr_int32)(dotnet_object,dotnet_fieldid,void*,int32_t);
+typedef dotnet_error(*_dotnet_frame_fieldid_voidptr_int32)(dotnet_frame,dotnet_fieldid,void*,int32_t);
+typedef dotnet_error(*_dotnet_fieldid_voidptr_int32)(dotnet_fieldid,void*,int32_t);
+typedef dotnet_error(*_dotnet_voidptr_fieldid_voidptr_int32)(void*,dotnet_fieldid,void*,int32_t);
 
 #define DOTNET_V1_API_GROUP "DOTNET.0"
 struct dotnet_embedding_api_group
@@ -134,6 +139,14 @@ struct dotnet_embedding_api_group
     _dotnet_frame_typeid_out_object get_typeid_lifetime_object;
     _dotnet_frame_methodid_out_object get_methodid_lifetime_object;
     
+    // Object manipulation
+    _dotnet_frame_object_fieldid_voidptr_int32 read_field;
+    _dotnet_object_fieldid_voidptr_int32 write_field;
+    _dotnet_frame_fieldid_voidptr_int32 read_static_field;
+    _dotnet_fieldid_voidptr_int32 write_static_field;
+    _dotnet_voidptr_fieldid_voidptr_int32 read_field_on_struct;
+    _dotnet_voidptr_fieldid_voidptr_int32 write_field_on_struct;
+
     // String api
     _dotnet_frame_utf8str_out_object string_alloc_utf8;
 
