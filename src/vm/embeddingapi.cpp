@@ -334,8 +334,8 @@ dotnet_error embeddingapi_handle_unpin(dotnet_frame frame, dotnet_pin pin)
     return S_OK;
 }
 
-// Reflection-surface
-dotnet_error embeddingapi_handle_unpin(dotnet_frame frame, dotnet_pin pin)
+// Id access surface
+dotnet_error embeddingapi_get_typeid(dotnet_object type, dotnet_typeid* typeid)
 {
     CONTRACTL
     {
@@ -346,12 +346,150 @@ dotnet_error embeddingapi_handle_unpin(dotnet_frame frame, dotnet_pin pin)
     }
     CONTRACTL_END;
 
+    if (type == NULL)
+        return E_INVALIDARG;
+    
     GCX_COOP();
-    FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
-    actualFrame->FreeEntry(pin);
+    REFLECTCLASSBASEREF typeObj = (REFLECTCLASSBASEREF)ObjectToOBJECTREF(*(Object**)type);
+    TypeHandle th = typeObj->GetType();
+    *typeid = (dotnet_typeid)th.AsPtr();
     return S_OK;
 }
 
+dotnet_error embeddingapi_get_methodid(dotnet_object method, dotnet_methodid* methodid)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    if (method == NULL)
+        return E_INVALIDARG;
+    
+    GCX_COOP();
+    REFLECTMETHODREF methodObj = (REFLECTMETHODREF)ObjectToOBJECTREF(*(Object**)method);
+    MethodDesc *pMD = methodObj->GetMethod();
+    *methodid = (dotnet_methodid)pMD;
+    return S_OK;
+}
+
+// Method invoke implementation
+dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_NOT_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    ARG_SLOT *pArgSlots = (ARG_SLOT*)_alloca(sizeof(ARG_SLOT) * countOfArguments - 1);
+
+    MethodDescCallSite methodToCall((MethodDesc*)methodId);
+
+    for (int i = 0; i < (countOfArguments - 1); i++)
+    {
+        dotnet_invokeargument invokeArg = arguments[i+1];
+        TypeHandle argumentTypeHandle = TypeHandle((void*)invokeArg.type);
+        pArgSlots[i] = (ARG_SLOT)0;
+
+        // 8 possible cases (NOTE: the concept of Primitive or enum value is the calling convention concept, not strictly the managed construct)
+        // 1. Primitive or enum value. Encode directly in ARG_SLOT
+        // 2. Reference type value. Encode translated value directly in ARG_SLOT
+        // 3. Structure without gc pointers. Place pointer to structure in invokeargument directly into ARG_SLOT. (Works for byref and non-byref cases)
+        // 4. Structure with gc pointers. Allocate new GC protected buffer of appropriate size, Copy data into it, but where copying GC pointers, perform translation. Place pointer to copied struct into ARG_SLOT
+        // 5. Primitive or enum value BYREF. Place pointer to structure in invokeargument directly into ARG_SLOT.
+        // 6. Reference type value BYREF. Allocate GC protected location for reference type. extract to there, once function call completes, marshal back as new BYREF
+        // 7. Structure without gc pointers BYREF. As above for Structure without gc pointers exactly
+        // 8. Structure with gc pointers BYREF. As above for Structure with gc pointers, but also copy out into original buffer
+
+        // TODO!: The above rules are quite possibly inaccurate. Further investigation of the reflection invoke call path is needed
+        // In particular, its known that this isn't how the this pointer must be marshalled for instance methods, and byref returns aren't handled correctly here
+
+        // Current implementation covers clases 1,2, 3, 5 and 7
+        CorElementType etCallingConvention = argumentTypeHandle.GetInternalCorElementType();
+
+        if (CorTypeInfo::IsObjRef(etCallingConvention))
+        {
+            // Case 2.
+            pArgSlots[i] = (ARG_SLOT)**(Object***)invokeArg.data;
+        }
+        else if (etCallingConvention == ELEMENT_TYPE_VALUETYPE)
+        {
+            if (!argumentTypeHandle.GetMethodTable()->ContainsPointers())
+            {
+                // Case 3
+                pArgSlots[i] = (ARG_SLOT)invokeArg.data;
+            }
+            else
+            {
+                // Case 4
+                return E_FAIL;
+            }
+        }
+        else if (etCallingConvention == ELEMENT_TYPE_BYREF)
+        {
+            TypeHandle thByRefOf = argumentTypeHandle.GetTypeParam();
+            etCallingConvention = thByRefOf.GetInternalCorElementType();
+
+            if (CorTypeInfo::IsObjRef(etCallingConvention))
+            {
+                // Case 6.
+                return E_FAIL;
+            }
+            if (!argumentTypeHandle.GetMethodTable()->ContainsPointers())
+            {
+                // Case 5 and 7
+                pArgSlots[i] = (ARG_SLOT)invokeArg.data;
+            }
+            else
+            {
+                // Case 8
+                return E_FAIL;
+            }
+        }
+        else
+        {
+            // Case 1
+            _ASSERTE(argumentTypeHandle.GetSize() <= sizeof(ARG_SLOT));
+            memcpy(pArgSlots[i], invokeArg.data, argumentTypeHandle.GetSize());
+        }
+    }
+
+    ARG_SLOT returnValue = methodToCall.Call_RetArgSlot(pArgSlots);
+
+    // There are a variety of return paths...
+    // Handle two of them
+
+    TypeHandle returnTypeHandle = TypeHandle((void*)arguments[0].type);
+    CorElementType etReturnType = thByRefOf.GetInternalCorElementType();
+
+    if (CorTypeInfo::IsObjRef(etReturnType))
+    {
+        return embeddingapi_handle_alloc(frame, ArgSlotToObj(returnValue), (dotnet_object*)arguments[0].data);
+    }
+    else if (etReturnType == ELEMENT_TYPE_VALUETYPE)
+    {
+        return E_FAIL;
+    }
+    else
+    {
+        // Copy argslot contents back into data
+        memcpy(arguments[0].data, returnValue, returnTypeHandle.GetSize());
+        return S_OK;
+    }
+}
+
+
+// Setup embedding api infrastructure
 static void* GetApiFromManaged(EmbeddingApi::GetApiHelperEnum api)
 {
     MethodDescCallSite getApi(METHOD__EMBEDDING_API__GET_API);
@@ -401,6 +539,11 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->type_gettype = GetApiFromManaged(EmbeddingApi::Type_GetType;
         pApi->type_getmethod = GetApiFromManaged(EmbeddingApi::Type_GetMethod);
         pApi->string_alloc_utf8 = GetApiFromManaged(EmbeddingApi::String_AllocUtf8);
+
+        pApi->get_typeid = embeddingapi_get_typeid;
+        pApi->get_methodid = embeddingapi_get_methodid;
+
+        pApi->method_invoke = embeddingapi_method_invoke;
     }
 
     END_GETTHREAD_ALLOWED;
