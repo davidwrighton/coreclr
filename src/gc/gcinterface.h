@@ -373,9 +373,6 @@ typedef enum
      * Refcounted handles are handles that behave as strong handles while the
      * refcount on them is greater than 0 and behave as weak handles otherwise.
      *
-     * N.B. These are currently NOT general purpose.
-     *      The implementation is tied to COM Interop.
-     *
      */
     HNDTYPE_REFCOUNTED   = 5,
 
@@ -470,6 +467,8 @@ public:
     virtual OBJECTHANDLE CreateDependentHandle(Object* primary, Object* secondary) = 0;
 
     virtual ~IGCHandleStore() {};
+
+    virtual void TraceRefCountedHandles(HANDLESCANPROC callback, uintptr_t param1, uintptr_t param2) = 0;
 };
 
 class IGCHandleManager {
@@ -508,8 +507,6 @@ public:
     virtual Object* InterlockedCompareExchangeObjectInHandle(OBJECTHANDLE handle, Object* object, Object* comparandObject) = 0;
 
     virtual HandleType HandleFetchType(OBJECTHANDLE handle) = 0;
-
-    virtual void TraceRefCountedHandles(HANDLESCANPROC callback, uintptr_t param1, uintptr_t param2) = 0;
 };
 
 // IGCHeap is the interface that the VM will use when interacting with the GC.

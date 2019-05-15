@@ -57,6 +57,11 @@ OBJECTHANDLE GCHandleStore::CreateDependentHandle(Object* primary, Object* secon
     return handle;
 }
 
+void GCHandleStore::TraceRefCountedHandles(HANDLESCANPROC callback, uintptr_t param1, uintptr_t param2)
+{
+    ::Ref_TraceRefCountHandles(_underlyingBucket, callback, param1, param2);
+}
+
 GCHandleStore::~GCHandleStore()
 {
     ::Ref_DestroyHandleTableBucket(&_underlyingBucket);
@@ -170,10 +175,5 @@ HandleType GCHandleManager::HandleFetchType(OBJECTHANDLE handle)
     uint32_t type = ::HandleFetchType(handle);
     assert(type >= HNDTYPE_WEAK_SHORT && type <= HNDTYPE_WEAK_WINRT);
     return static_cast<HandleType>(type);
-}
-
-void GCHandleManager::TraceRefCountedHandles(HANDLESCANPROC callback, uintptr_t param1, uintptr_t param2)
-{
-    ::Ref_TraceRefCountHandles(callback, param1, param2);
 }
 

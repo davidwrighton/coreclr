@@ -23,6 +23,8 @@ public:
 
     virtual OBJECTHANDLE CreateDependentHandle(Object* primary, Object* secondary);
 
+    virtual void TraceRefCountedHandles(HANDLESCANPROC callback, uintptr_t param1, uintptr_t param2);
+
     virtual ~GCHandleStore();
 
     HandleTableBucket _underlyingBucket;
@@ -66,8 +68,6 @@ public:
     virtual Object* InterlockedCompareExchangeObjectInHandle(OBJECTHANDLE handle, Object* object, Object* comparandObject);
 
     virtual HandleType HandleFetchType(OBJECTHANDLE handle);
-
-    virtual void TraceRefCountedHandles(HANDLESCANPROC callback, uintptr_t param1, uintptr_t param2);
 };
 
 #endif  // GCHANDLETABLE_H_

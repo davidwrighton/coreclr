@@ -1089,28 +1089,17 @@ void Ref_TraceNormalRoots(uint32_t condemned, uint32_t maxgen, ScanContext* sc, 
 }
 
 
-void Ref_TraceRefCountHandles(HANDLESCANPROC callback, uintptr_t lParam1, uintptr_t lParam2)
+void Ref_TraceRefCountHandles(HandleTableBucket *pBucket, HANDLESCANPROC callback, uintptr_t lParam1, uintptr_t lParam2)
 {
 #ifdef FEATURE_COMINTEROP
     int max_slots = getNumberOfSlots();
     uint32_t handleType = HNDTYPE_REFCOUNTED;
 
-    HandleTableMap *walk = &g_HandleTableMap;
-    while (walk)
+    for (int j = 0; j < max_slots; j++)
     {
-        for (uint32_t i = 0; i < INITIAL_HANDLE_TABLE_ARRAY_SIZE; i++)
-        {
-            if (walk->pBuckets[i] != NULL)
-            {
-                for (int j = 0; j < max_slots; j++)
-                {
-                    HHANDLETABLE hTable = walk->pBuckets[i]->pTable[j];
-                    if (hTable)
-                        HndEnumHandles(hTable, &handleType, 1, callback, lParam1, lParam2, false);
-                }
-            }
-        }
-        walk = walk->pNext;
+        HHANDLETABLE hTable = walk->pBuckets[i]->pTable[j];
+        if (hTable)
+            HndEnumHandles(hTable, &handleType, 1, callback, lParam1, lParam2, false);
     }
 #else
     UNREFERENCED_PARAMETER(callback);
