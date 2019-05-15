@@ -449,7 +449,8 @@ typedef void (* fq_scan_fn)(Object** ppObject, ScanContext *pSC, uint32_t dwFlag
 typedef void (* handle_scan_fn)(Object** pRef, Object* pSec, uint32_t flags, ScanContext* context, bool isDependent);
 typedef bool (* async_pin_enum_fn)(Object* object, void* context);
 
-
+// Callback passed when creating handle table
+typedef bool ref_counted_handle_callback_func(Object * pObject);
 
 class IGCHandleStore {
 public:
@@ -474,13 +475,13 @@ public:
 class IGCHandleManager {
 public:
 
-    virtual bool Initialize() = 0;
+    virtual bool Initialize(ref_counted_handle_callback_func *ref_counted_handle_callback) = 0;
 
     virtual void Shutdown() = 0;
 
     virtual IGCHandleStore* GetGlobalHandleStore() = 0;
 
-    virtual IGCHandleStore* CreateHandleStore() = 0;
+    virtual IGCHandleStore* CreateHandleStore(ref_counted_handle_callback_func *ref_counted_handle_callback) = 0;
 
     virtual void DestroyHandleStore(IGCHandleStore* store) = 0;
 

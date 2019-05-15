@@ -35,13 +35,13 @@ extern GCHandleStore* g_gcGlobalHandleStore;
 class GCHandleManager : public IGCHandleManager
 {
 public:
-    virtual bool Initialize();
+    virtual bool Initialize(ref_counted_handle_callback_func *ref_counted_handle_callback);
 
     virtual void Shutdown();
 
     virtual IGCHandleStore* GetGlobalHandleStore();
 
-    virtual IGCHandleStore* CreateHandleStore();
+    virtual IGCHandleStore* CreateHandleStore(ref_counted_handle_callback_func *ref_counted_handle_callback);
 
     virtual void DestroyHandleStore(IGCHandleStore* store);
 

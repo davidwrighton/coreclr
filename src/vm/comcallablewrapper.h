@@ -1304,6 +1304,8 @@ FORCEINLINE void CCWRelease(ComCallWrapper* p)
     p->Release();
 }
 
+bool ComRefCountedHandleCallback(Object *pObject);
+
 class CCWHolder : public Wrapper<ComCallWrapper*, CCWHolderDoNothing, CCWRelease, NULL>
 {
 public:

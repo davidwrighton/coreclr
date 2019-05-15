@@ -166,11 +166,6 @@ void GCToEEInterface::GcDone(int condemned)
 {
 }
 
-bool GCToEEInterface::RefCountedHandleCallbacks(Object * pObject)
-{
-    return false;
-}
-
 bool GCToEEInterface::IsPreemptiveGCDisabled()
 {
     Thread* pThread = ::GetThread();

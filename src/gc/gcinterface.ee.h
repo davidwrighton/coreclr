@@ -206,11 +206,6 @@ public:
     virtual
     void GcDone(int condemned) = 0;
 
-    // Predicate for the GC to query whether or not a given refcounted handle should
-    // be promoted.
-    virtual
-    bool RefCountedHandleCallbacks(Object * pObject) = 0;
-
     // Performs a weak pointer scan of the sync block cache.
     virtual
     void SyncBlockCacheWeakPtrScan(HANDLESCANPROC scanProc, uintptr_t lp1, uintptr_t lp2) = 0;

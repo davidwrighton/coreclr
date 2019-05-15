@@ -59,12 +59,6 @@ inline void GCToEEInterface::GcDone(int condemned)
     g_theGCToCLR->GcDone(condemned);
 }
 
-inline bool GCToEEInterface::RefCountedHandleCallbacks(Object * pObject)
-{
-    assert(g_theGCToCLR != nullptr);
-    return g_theGCToCLR->RefCountedHandleCallbacks(pObject);
-}
-
 inline void GCToEEInterface::SyncBlockCacheWeakPtrScan(HANDLESCANPROC scanProc, uintptr_t lp1, uintptr_t lp2)
 {
     assert(g_theGCToCLR != nullptr);

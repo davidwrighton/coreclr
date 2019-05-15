@@ -37,9 +37,6 @@ public:
     // post-gc callback.
     static void GcDone(int condemned);
 
-    // Promote refcounted handle callback
-    static bool RefCountedHandleCallbacks(Object * pObject);
-
     // Sync block cache management
     static void SyncBlockCacheWeakPtrScan(HANDLESCANPROC scanProc, uintptr_t lp1, uintptr_t lp2);
     static void SyncBlockCacheDemote(int max_gen);

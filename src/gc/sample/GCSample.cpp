@@ -136,7 +136,7 @@ int __cdecl main(int argc, char* argv[])
     //
     // Initialize handle manager
     //
-    if (!pGCHandleManager->Initialize())
+    if (!pGCHandleManager->Initialize(NULL))
         return -1;
 
     //

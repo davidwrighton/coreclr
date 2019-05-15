@@ -240,25 +240,6 @@ void GCToEEInterface::GcDone(int condemned)
 #endif // FEATURE_COMINTEROP
 }
 
-bool GCToEEInterface::RefCountedHandleCallbacks(Object * pObject)
-{
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-    }
-    CONTRACTL_END;
-
-#ifdef FEATURE_COMINTEROP
-    //<REVISIT_TODO>@todo optimize the access to the ref-count
-    ComCallWrapper* pWrap = ComCallWrapper::GetWrapperForObject((OBJECTREF)pObject);
-
-    return pWrap != NULL && pWrap->IsWrapperActive();
-#else
-    return false;
-#endif
-}
-
 void GCToEEInterface::GcBeforeBGCSweepWork()
 {
     CONTRACTL

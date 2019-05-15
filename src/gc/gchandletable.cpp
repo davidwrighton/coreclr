@@ -59,7 +59,7 @@ OBJECTHANDLE GCHandleStore::CreateDependentHandle(Object* primary, Object* secon
 
 void GCHandleStore::TraceRefCountedHandles(HANDLESCANPROC callback, uintptr_t param1, uintptr_t param2)
 {
-    ::Ref_TraceRefCountHandles(_underlyingBucket, callback, param1, param2);
+    ::Ref_TraceRefCountHandles(&_underlyingBucket, callback, param1, param2);
 }
 
 GCHandleStore::~GCHandleStore()
@@ -67,9 +67,9 @@ GCHandleStore::~GCHandleStore()
     ::Ref_DestroyHandleTableBucket(&_underlyingBucket);
 }
 
-bool GCHandleManager::Initialize()
+bool GCHandleManager::Initialize(ref_counted_handle_callback_func* ref_counted_handle_callback)
 {
-    return Ref_Initialize();
+    return Ref_Initialize(ref_counted_handle_callback);
 }
 
 void GCHandleManager::Shutdown()
@@ -87,7 +87,7 @@ IGCHandleStore* GCHandleManager::GetGlobalHandleStore()
     return g_gcGlobalHandleStore;
 }
 
-IGCHandleStore* GCHandleManager::CreateHandleStore()
+IGCHandleStore* GCHandleManager::CreateHandleStore(ref_counted_handle_callback_func *ref_counted_handle_callback)
 {
 #ifndef FEATURE_REDHAWK
     GCHandleStore* store = new (nothrow) GCHandleStore();
@@ -96,7 +96,7 @@ IGCHandleStore* GCHandleManager::CreateHandleStore()
         return nullptr;
     }
 
-    bool success = ::Ref_InitializeHandleTableBucket(&store->_underlyingBucket);
+    bool success = ::Ref_InitializeHandleTableBucket(&store->_underlyingBucket, ref_counted_handle_callback);
     if (!success)
     {
         delete store;

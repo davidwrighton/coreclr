@@ -35,8 +35,9 @@ extern HandleTableMap g_HandleTableMap;
 
 struct HandleTableBucket
 {
-    PTR_HHANDLETABLE pTable;
-    uint32_t         HandleTableIndex;
+    PTR_HHANDLETABLE                  pTable;
+    ref_counted_handle_callback_func* ref_counted_handle_callback;
+    uint32_t                          HandleTableIndex;
 
     bool Contains(OBJECTHANDLE handle);
 };
@@ -76,9 +77,9 @@ int GetCurrentThreadHomeHeapNumber();
 /*
  * Table maintenance routines
  */
-bool Ref_Initialize();
+bool Ref_Initialize(ref_counted_handle_callback_func* ref_counted_handle_callback);
 void Ref_Shutdown();
-bool Ref_InitializeHandleTableBucket(HandleTableBucket* bucket);
+bool Ref_InitializeHandleTableBucket(HandleTableBucket* bucket, ref_counted_handle_callback_func *ref_counted_handle_callback);
 void Ref_RemoveHandleTableBucket(HandleTableBucket *pBucket);
 void Ref_DestroyHandleTableBucket(HandleTableBucket *pBucket);
 

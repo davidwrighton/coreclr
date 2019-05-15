@@ -63,6 +63,7 @@ public:
 class dac_handle_table_bucket {
 public:
     DPTR(DPTR(dac_handle_table)) pTable;
+    uint8_t* ref_counted_handle_callback;
     uint32_t HandleTableIndex;
 };
 

@@ -67,7 +67,12 @@ void CALLBACK VariableTraceDispatcher(_UNCHECKED_OBJECTREF *pObjRef, uintptr_t *
     }
 }
 
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
+struct PromoteRefCountedParams
+{
+    ScanContext *sc;
+    ref_counted_handle_callback_func *handle_callback;
+};
+
 /*
  * Scan callback for tracing ref-counted handles.
  *
@@ -79,8 +84,10 @@ void CALLBACK PromoteRefCounted(_UNCHECKED_OBJECTREF *pObjRef, uintptr_t *pExtra
     WRAPPER_NO_CONTRACT;
     UNREFERENCED_PARAMETER(pExtraInfo);
 
+    PromoteRefCountedParams params = *(PromoteRefCountedParams*)lp1;
+
     // there are too many races when asychnronously scanning ref-counted handles so we no longer support it
-    _ASSERTE(!((ScanContext*)lp1)->concurrent);
+    _ASSERTE(!params.sc->concurrent);
 
     LOG((LF_GC, LL_INFO1000, LOG_HANDLE_OBJECT_CLASS("", pObjRef, "causes promotion of ", *pObjRef)));
 
@@ -92,18 +99,17 @@ void CALLBACK PromoteRefCounted(_UNCHECKED_OBJECTREF *pObjRef, uintptr_t *pExtra
 
     if (!HndIsNullOrDestroyedHandle(pObj) && !g_theGCHeap->IsPromoted(pObj))
     {
-        if (GCToEEInterface::RefCountedHandleCallbacks(pObj))
+        if (params.handle_callback(pObj))
         {
             _ASSERTE(lp2);
             promote_func* callback = (promote_func*) lp2;
-            callback(&pObj, (ScanContext *)lp1, 0);
+            callback(&pObj, params.sc, 0);
         }
     }
     
     // Assert this object wasn't relocated since we are passing a temporary object's address.
     _ASSERTE(pOldObj == pObj);
 }
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
 
 
 // Only used by profiling/ETW.
@@ -389,6 +395,13 @@ void CALLBACK UpdatePointer(_UNCHECKED_OBJECTREF *pObjRef, uintptr_t *pExtraInfo
 
 
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
+struct ScanPointerForProfilerAndETWParams
+{
+    ScanContext *sc;
+    ref_counted_handle_callback_func *ref_counted_handle_callback;
+};
+
+
 /*
  * Scan callback for updating pointers.
  *
@@ -404,6 +417,7 @@ void CALLBACK ScanPointerForProfilerAndETW(_UNCHECKED_OBJECTREF *pObjRef, uintpt
     }
     CONTRACTL_END;
     UNREFERENCED_PARAMETER(pExtraInfo);
+    ScanPointerForProfilerAndETWParams params = *(ScanPointerForProfilerAndETWParams*)lp1;
     handle_scan_fn fn = (handle_scan_fn)lp2;
 
     LOG((LF_GC | LF_CORPROF, LL_INFO100000, LOG_HANDLE_OBJECT_CLASS("Notifying profiler of ", pObjRef, "to ", *pObjRef)));
@@ -412,7 +426,7 @@ void CALLBACK ScanPointerForProfilerAndETW(_UNCHECKED_OBJECTREF *pObjRef, uintpt
     Object **pRef = (Object **)pObjRef;
 
     // Get a hold of the heap ID that's tacked onto the end of the scancontext struct.
-    ScanContext *pSC = (ScanContext *)lp1;
+    ScanContext *pSC = params.sc;
 
     uint32_t rootFlags = 0;
     bool isDependent = false;
@@ -462,16 +476,14 @@ void CALLBACK ScanPointerForProfilerAndETW(_UNCHECKED_OBJECTREF *pObjRef, uintpt
 #endif
         break;
 
-#if defined(FEATURE_COMINTEROP) && !defined(FEATURE_REDHAWK)
     case    HNDTYPE_REFCOUNTED:
         rootFlags |= kEtwGCRootFlagsRefCounted;
         if (*pRef != NULL)
         {
-            if (!GCToEEInterface::RefCountedHandleCallbacks(*pRef))
+            if (!params.ref_counted_handle_callback(*pRef))
                 rootFlags |= kEtwGCRootFlagsWeakRef;
         }
         break;
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
     }
 
     _UNCHECKED_OBJECTREF pSec = NULL;
@@ -578,7 +590,7 @@ HandleTableBucketHolder::~HandleTableBucketHolder()
     // we do not own m_bucket, so we shouldn't delete it here.
 }
 
-bool Ref_Initialize()
+bool Ref_Initialize(ref_counted_handle_callback_func* ref_counted_handle_callback)
 {
     CONTRACTL
     {
@@ -609,6 +621,7 @@ bool Ref_Initialize()
     HandleTableBucket* pBucket = &g_gcGlobalHandleStore->_underlyingBucket;
 
     pBucket->HandleTableIndex = 0;
+    pBucket->ref_counted_handle_callback = ref_counted_handle_callback;
 
     int n_slots = getNumberOfSlots();
 
@@ -688,7 +701,7 @@ void Ref_Shutdown()
 }
 
 #ifndef FEATURE_REDHAWK
-bool Ref_InitializeHandleTableBucket(HandleTableBucket* bucket)
+bool Ref_InitializeHandleTableBucket(HandleTableBucket* bucket, ref_counted_handle_callback_func *ref_counted_handle_callback)
 {
     CONTRACTL
     {
@@ -699,6 +712,8 @@ bool Ref_InitializeHandleTableBucket(HandleTableBucket* bucket)
     CONTRACTL_END;
 
     HandleTableBucket *result = bucket;
+    bucket->ref_counted_handle_callback = ref_counted_handle_callback;
+    
     HandleTableMap *walk = &g_HandleTableMap;
 
     HandleTableMap *last = NULL;
@@ -1066,7 +1081,6 @@ void Ref_TraceNormalRoots(uint32_t condemned, uint32_t maxgen, ScanContext* sc, 
     // promote objects pointed to by variable handles whose dynamic type is VHT_STRONG
     TraceVariableHandles(PromoteObject, uintptr_t(sc), uintptr_t(fn), VHT_STRONG, condemned, maxgen, flags);
 
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
     // don't scan ref-counted handles during concurrent phase as the clean-up of CCWs can race with AD unload and cause AV's
     if (!sc->concurrent)
     {
@@ -1085,27 +1099,20 @@ void Ref_TraceNormalRoots(uint32_t condemned, uint32_t maxgen, ScanContext* sc, 
             walk = walk->pNext;
         }
     }
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
 }
 
 
 void Ref_TraceRefCountHandles(HandleTableBucket *pBucket, HANDLESCANPROC callback, uintptr_t lParam1, uintptr_t lParam2)
 {
-#ifdef FEATURE_COMINTEROP
     int max_slots = getNumberOfSlots();
     uint32_t handleType = HNDTYPE_REFCOUNTED;
 
     for (int j = 0; j < max_slots; j++)
     {
-        HHANDLETABLE hTable = walk->pBuckets[i]->pTable[j];
+        HHANDLETABLE hTable = pBucket->pTable[j];
         if (hTable)
             HndEnumHandles(hTable, &handleType, 1, callback, lParam1, lParam2, false);
     }
-#else
-    UNREFERENCED_PARAMETER(callback);
-    UNREFERENCED_PARAMETER(lParam1);
-    UNREFERENCED_PARAMETER(lParam2);
-#endif // FEATURE_COMINTEROP
 }
 
 
@@ -1121,9 +1128,7 @@ void Ref_CheckReachable(uint32_t condemned, uint32_t maxgen, uintptr_t lp1)
     uint32_t types[] =
     {
         HNDTYPE_WEAK_LONG,
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
         HNDTYPE_REFCOUNTED,
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
     };
 
     // check objects pointed to by short weak handles
@@ -1424,9 +1429,7 @@ void Ref_UpdatePointers(uint32_t condemned, uint32_t maxgen, ScanContext* sc, Re
         HNDTYPE_WEAK_SHORT,
         HNDTYPE_WEAK_LONG,
         HNDTYPE_STRONG,
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
         HNDTYPE_REFCOUNTED,
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
 #ifdef FEATURE_COMINTEROP
         HNDTYPE_WEAK_WINRT,
 #endif // FEATURE_COMINTEROP
@@ -1470,9 +1473,7 @@ void Ref_ScanHandlesForProfilerAndETW(uint32_t maxgen, uintptr_t lp1, handle_sca
         HNDTYPE_WEAK_SHORT,
         HNDTYPE_WEAK_LONG,
         HNDTYPE_STRONG,
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
         HNDTYPE_REFCOUNTED,
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
 #ifdef FEATURE_COMINTEROP
         HNDTYPE_WEAK_WINRT,
 #endif // FEATURE_COMINTEROP
@@ -1483,24 +1484,33 @@ void Ref_ScanHandlesForProfilerAndETW(uint32_t maxgen, uintptr_t lp1, handle_sca
     };
 
     uint32_t flags = HNDGCF_NORMAL;
+    ScanPointerForProfilerAndETWParams scanPointerParams;
+    scanPointerParams.sc = (ScanContext*)lp1;
 
     // perform a multi-type scan that updates pointers
     HandleTableMap *walk = &g_HandleTableMap;
     while (walk) {
         for (uint32_t i = 0; i < INITIAL_HANDLE_TABLE_ARRAY_SIZE; i ++)
+        {
             if (walk->pBuckets[i] != NULL)
+            {
                 // this is the one of Ref_* function performed by single thread in MULTI_HEAPS case, so we need to loop through all HT of the bucket
+                scanPointerParams.ref_counted_handle_callback = walk->pBuckets[i]->ref_counted_handle_callback;
+
                 for (int uCPUindex=0; uCPUindex < getNumberOfSlots(); uCPUindex++)
                 {
                     HHANDLETABLE hTable = walk->pBuckets[i]->pTable[uCPUindex];
                     if (hTable)
-                        HndScanHandlesForGC(hTable, &ScanPointerForProfilerAndETW, lp1, (uintptr_t)fn, types, _countof(types), maxgen, maxgen, flags);
+                        HndScanHandlesForGC(hTable, &ScanPointerForProfilerAndETW, (uintptr_t)&scanPointerParams, (uintptr_t)fn, types, _countof(types), maxgen, maxgen, flags);
                 }
+            }
+        }
         walk = walk->pNext;
     }
 
     // update pointers in variable handles whose dynamic type is VHT_WEAK_SHORT, VHT_WEAK_LONG or VHT_STRONG
-    TraceVariableHandlesBySingleThread(&ScanPointerForProfilerAndETW, lp1, (uintptr_t)fn, VHT_WEAK_SHORT | VHT_WEAK_LONG | VHT_STRONG, maxgen, maxgen, flags);
+    scanPointerParams.ref_counted_handle_callback = NULL; // This can be NULL, as HNDTYPE_VARIABLE scanning does not need to use the callback
+    TraceVariableHandlesBySingleThread(&ScanPointerForProfilerAndETW, (uintptr_t)&scanPointerParams, (uintptr_t)fn, VHT_WEAK_SHORT | VHT_WEAK_LONG | VHT_STRONG, maxgen, maxgen, flags);
 }
 
 void Ref_ScanDependentHandlesForProfilerAndETW(uint32_t maxgen, ScanContext * SC, handle_scan_fn fn)
@@ -1539,9 +1549,7 @@ void Ref_ScanPointers(uint32_t condemned, uint32_t maxgen, ScanContext* sc, Ref_
         HNDTYPE_WEAK_SHORT,
         HNDTYPE_WEAK_LONG,
         HNDTYPE_STRONG,
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
         HNDTYPE_REFCOUNTED,
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
         HNDTYPE_PINNED,
         HNDTYPE_ASYNCPINNED,
         HNDTYPE_SIZEDREF,
@@ -1616,9 +1624,7 @@ void Ref_AgeHandles(uint32_t condemned, uint32_t maxgen, uintptr_t lp1)
 
         HNDTYPE_PINNED,
         HNDTYPE_VARIABLE,
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
         HNDTYPE_REFCOUNTED,
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
 #ifdef FEATURE_COMINTEROP
         HNDTYPE_WEAK_WINRT,
 #endif // FEATURE_COMINTEROP
@@ -1659,9 +1665,7 @@ void Ref_RejuvenateHandles(uint32_t condemned, uint32_t maxgen, uintptr_t lp1)
 
         HNDTYPE_PINNED,
         HNDTYPE_VARIABLE,
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
         HNDTYPE_REFCOUNTED,
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
 #ifdef FEATURE_COMINTEROP
         HNDTYPE_WEAK_WINRT,
 #endif // FEATURE_COMINTEROP
@@ -1701,9 +1705,7 @@ void Ref_VerifyHandleTable(uint32_t condemned, uint32_t maxgen, ScanContext* sc)
 
         HNDTYPE_PINNED,
         HNDTYPE_VARIABLE,
-#if defined(FEATURE_COMINTEROP) || defined(FEATURE_REDHAWK)
         HNDTYPE_REFCOUNTED,
-#endif // FEATURE_COMINTEROP || FEATURE_REDHAWK
 #ifdef FEATURE_COMINTEROP
         HNDTYPE_WEAK_WINRT,
 #endif // FEATURE_COMINTEROP

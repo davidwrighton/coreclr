@@ -822,7 +822,14 @@ void EEStartupHelper(COINITIEE fFlags)
 
         // Initialize remoting
 
-        if (!GCHandleUtilities::GetGCHandleManager()->Initialize())
+        ref_counted_handle_callback_func *callback;
+#ifdef FEATURE_COMINTEROP
+        callback = ComRefCountedHandleCallback;
+#else
+        callback = NULL;
+#endif
+
+        if (!GCHandleUtilities::GetGCHandleManager()->Initialize(callback))
         {
             IfFailGo(E_OUTOFMEMORY);
         }

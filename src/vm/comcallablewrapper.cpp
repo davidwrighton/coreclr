@@ -6361,3 +6361,22 @@ Module* ComCallMethodDesc::GetModule()
 
     RETURN pClass->GetModule();
 }
+
+bool ComRefCountedHandleCallback(Object *pObject)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+    }
+    CONTRACTL_END;
+
+#ifdef FEATURE_COMINTEROP
+    //<REVISIT_TODO>@todo optimize the access to the ref-count
+    ComCallWrapper* pWrap = ComCallWrapper::GetWrapperForObject((OBJECTREF)pObject);
+
+    return pWrap != NULL && pWrap->IsWrapperActive();
+#else
+    return false;
+#endif
+}
