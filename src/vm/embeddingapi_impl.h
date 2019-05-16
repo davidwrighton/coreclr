@@ -46,6 +46,26 @@ public:
     ~FrameForEmbeddingApi();
 }
 
+#include "fcall.h"
+
+
+class EmbeddingApi
+{
+public:
+    enum GetApiHelperEnum
+    {
+        // Keep this in sync with the num in embeddingapi_impl.h
+        Type_GetType,
+        Type_GetMethod,
+        String_AllocUtf8
+    };
+
+    static FCDECL0(dotnet_frame, nPushFrame);
+    static FCDECL1(void, nPopFrame, dotnet_frame frame);
+    static FCDECL1(Object*, nGetTarget, dotnet_object obj);
+    static FCDECL2(dotnet_object, nAllocHandle, dotnet_frame frame, Object* objectUNSAFE);
+};
+
 dotnet_error embeddingapi_handle_alloc(dotnet_frame, OBJECTREF objRef, dotnet_object *handle);
 
 

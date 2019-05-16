@@ -63,6 +63,11 @@
 #include "weakreferencenative.h"
 #include "varargsnative.h"
 #include "mlinfo.h"
+#include "embeddingapi_impl.h"
+
+#ifdef MDA_SUPPORTED 
+#include "mdaassistants.h"
+#endif
 
 #ifdef FEATURE_COMINTEROP
 #include "variant.h"

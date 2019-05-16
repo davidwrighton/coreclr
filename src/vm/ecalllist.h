@@ -59,7 +59,11 @@
 //
 //
 
-
+FCFuncStart(gEmbeddingApiFuncs)
+    FCFuncElement("nPushFrame",              EmbeddingApi::nPushFrame)
+    FCFuncElement("nPopFrame",               EmbeddingApi::nPopFrame)
+    FCFuncElement("nAllocHandle",            EmbeddingApi::nAllocHandle)
+FCFuncEnd()
 
 FCFuncStart(gDependentHandleFuncs)
     FCFuncElement("nInitialize",             DependentHandle::nInitialize)
@@ -1197,6 +1201,7 @@ FCClassElement("DateTime", "System", gDateTimeFuncs)
 FCClassElement("Debugger", "System.Diagnostics", gDiagnosticsDebugger)
 FCClassElement("Delegate", "System", gDelegateFuncs)
 FCClassElement("DependentHandle", "System.Runtime.CompilerServices", gDependentHandleFuncs)
+FCClassElement("EmbeddingApi", "System.Runtime.InteropServices", gEmbeddingApiFuncs)
 FCClassElement("Enum", "System", gEnumFuncs)
 FCClassElement("Environment", "System", gEnvironmentFuncs)
 #if defined(FEATURE_PERFTRACING)

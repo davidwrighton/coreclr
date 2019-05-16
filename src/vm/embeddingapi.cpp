@@ -141,7 +141,7 @@ dotnet_error embeddingapi_push_frame(dotnet_frame *frame)
     CONTRACTL
     {
         NOTHROW;
-        GC_NOTRIGGER;
+        GC_TRIGGERS;
         MODE_PREEMPTIVE;
         EE_THREAD_NOT_REQUIRED;
     }
@@ -161,6 +161,16 @@ dotnet_error embeddingapi_push_frame(dotnet_frame *frame)
     END_GETTHREAD_ALLOWED;
 
     return result;
+}
+
+FCIMPL0(dotnet_frame, EmbeddingApi::nPushFrame)
+{
+    FCALL_CONTRACT;
+    dotnet_frame newFrame = (dotnet_frame)new(nothrow) FrameForEmbeddingApi(pThread);
+    if (newFrame != NULL)
+        return newFrame;
+    else
+        FCThrow(kOutOfMemoryException);
 }
 
 dotnet_error embeddingapi_push_frame_collect_on_return(dotnet_frame *frame)
@@ -185,6 +195,23 @@ dotnet_error embeddingapi_pop_frame(dotnet_frame frame)
     return actualFrame->Pop() ? S_OK : E_INVALIDARG;
 }
 
+FCIMPL0(void, EmbeddingApi::nPopFrame, dotnet_frame frame)
+{
+    FCALL_CONTRACT;
+    FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
+    if (actualFrame->Pop())
+        return;
+    else
+    {
+        COMPlusThrowNonLocalized(kInv
+    }
+    dotnet_frame newFrame = (dotnet_frame)new(nothrow) FrameForEmbeddingApi(pThread);
+    if (newFrame != NULL)
+        return newFrame;
+    else
+        FCThrow(kInvalidOperationException);
+}
+
 dotnet_error embeddingapi_handle_free(dotnet_frame frame, dotnet_object object)
 {
     CONTRACTL
@@ -196,13 +223,16 @@ dotnet_error embeddingapi_handle_free(dotnet_frame frame, dotnet_object object)
     }
     CONTRACTL_END;
 
+    if (object == NULL)
+        return;
+
     GCX_COOP();
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
     actualFrame->FreeEntry(object);
     return S_OK;
 }
 
-HRESULT embeddingapi_handle_alloc(dotnet_frame, OBJECTREF objRef, dotnet_object *handle)
+HRESULT embeddingapi_handle_alloc(dotnet_frame frame, OBJECTREF objRef, dotnet_object *handle)
 {
     // THIS ISN'T public api surface, but it is used by logic which produces new embedding handles
     CONTRACTL
@@ -215,12 +245,36 @@ HRESULT embeddingapi_handle_alloc(dotnet_frame, OBJECTREF objRef, dotnet_object 
     CONTRACTL_END;
 
     if (objRef == NULL)
-        return E_INVALIDARG;
+        return NULL;
     
+    FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
     if (actualFrame->AllocEntry(objRef->GetAddress(), handle))
         return S_OK;
     else
         return E_OUTOFMEMORY;
+}
+
+FCIMPL1(dotnet_object, EmbeddingApi::nAllocHandle, dotnet_frame frame, Object* objectUNSAFE)
+{
+    FCALL_CONTRACT;
+
+    if (objectUNSAFE == NULL)
+        return NULL;
+    
+    FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
+    dotnet_object retVal;
+    if (!actualFrame->AllocEntry(objRef->GetAddress(), &retVal))
+        FCThrow(kOutOfMemoryException);
+
+    return retVal;
+}
+
+FCIMPL1(Object*, EmbeddingApi::nGetTarget, dotnet_object obj)
+{
+    if (obj == NULL)
+        return NULL;
+
+    return *(Object**)obj;
 }
 
 dotnet_error embeddingapi_handle_pin(dotnet_frame frame, dotnet_object object, dotnet_pin* pin, void**data)
@@ -233,6 +287,9 @@ dotnet_error embeddingapi_handle_pin(dotnet_frame frame, dotnet_object object, d
         EE_THREAD_REQUIRED;
     }
     CONTRACTL_END;
+
+    if (object == NULL)
+        return E_INVALIDARG;
 
     GCX_COOP();
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
@@ -277,10 +334,52 @@ dotnet_error embeddingapi_handle_unpin(dotnet_frame frame, dotnet_pin pin)
     return S_OK;
 }
 
+// Reflection-surface
+dotnet_error embeddingapi_handle_unpin(dotnet_frame frame, dotnet_pin pin)
+{
+    CONTRACTL
+    {
+        NOTHROW;
+        GC_NOTRIGGER;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+    FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
+    actualFrame->FreeEntry(pin);
+    return S_OK;
+}
+
+static void* GetApiFromManaged(EmbeddingApi::GetApiHelperEnum api)
+{
+    MethodDescCallSite getApi(METHOD__EMBEDDING_API__GET_API);
+    ARG_SLOT args[1] = { (ARG_SLOT)api };
+    return getApi.Call_RetLPVOID(args);
+}
+
 dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes)
 {
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_NOT_REQUIRED;
+    }
+    CONTRACTL_END;
+
     if (apiname == NULL)
         return E_INVALIDARG;
+
+    BEGIN_GETTHREAD_ALLOWED;
+    Thread *pThread = GetThreadNULLOk();
+
+    if (pThread == NULL)
+        pThread = SetupThread();
+
+    GCX_COOP();
 
     if (strcmp(apiname, DOTNET_V1_API_GROUP)
     {
@@ -299,7 +398,12 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->handle_pin = embeddingapi_handle_pin;
         pApi->handle_unpin = embeddingapi_handle_unpin;
 
+        pApi->type_gettype = GetApiFromManaged(EmbeddingApi::Type_GetType;
+        pApi->type_getmethod = GetApiFromManaged(EmbeddingApi::Type_GetMethod);
+        pApi->string_alloc_utf8 = GetApiFromManaged(EmbeddingApi::String_AllocUtf8);
     }
 
-    return E_FAIL;
+    END_GETTHREAD_ALLOWED;
+
+    return S_OK;
 }

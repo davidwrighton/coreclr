@@ -1431,6 +1431,9 @@ DEFINE_FIELD_U(_laLocalKeyValueStore,      LAHashKeyToTrackersObject,       _laL
 
 DEFINE_CLASS(LAHASHKEYTOTRACKERS, CompilerServices, LAHashKeyToTrackers)
 
+DEFINE_CLASS(EMBEDDING_API,         Interop,                EmbeddingApi)
+DEFINE_METHOD(EMBEDDING_API,        GET_API,        GetApi,              SM_Int_RetIntPtr)
+
 #undef DEFINE_CLASS
 #undef DEFINE_METHOD
 #undef DEFINE_FIELD
