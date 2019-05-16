@@ -358,6 +358,123 @@ dotnet_error embeddingapi_gchandle_alloc(dotnet_object obj, dotnet_gchandle *gch
 
     GCX_COOP();
 
+    EX_TRY
+    {
+        *gchandle = NULL;
+        OBJECTREF objRef = embeddingapi_get_target(obj);
+        OBJECTHANDLE gch = CreateGlobalHandle(objRef);
+        *gchandle = (dotnet_gchandle)gch;
+    }
+    EX_CATCH
+    {
+        return E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+}
+
+dotnet_error embeddingapi_gchandle_alloc_weak(dotnet_object obj, dotnet_gchandle *gchandle)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    EX_TRY
+    {
+        *gchandle = NULL;
+        OBJECTREF objRef = embeddingapi_get_target(obj);
+        OBJECTHANDLE gch = CreateGlobalShortWeakHandle(objRef);
+        *gchandle = (dotnet_gchandle)gch;
+    }
+    EX_CATCH
+    {
+        return E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+}
+
+dotnet_error embeddingapi_gchandle_alloc_weak_track_resurrection(dotnet_object obj, dotnet_gchandle *gchandle)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    EX_TRY
+    {
+        *gchandle = NULL;
+        OBJECTREF objRef = embeddingapi_get_target(obj);
+        OBJECTHANDLE gch = CreateGlobalLongWeakHandle(objRef);
+        *gchandle = (dotnet_gchandle)gch;
+    }
+    EX_CATCH
+    {
+        return E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+}
+
+dotnet_error embeddingapi_gchandle_free(dotnet_gchandle gchandle)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    EX_TRY
+    {
+        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+        DestroyTypedHandle(gch);
+    }
+    EX_CATCH
+    {
+        return E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+}
+
+dotnet_error embeddingapi_gchandle_get_target(dotnet_frame frame, dotnet_gchandle gchandle, dotnet_object *object)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    EX_TRY
+    {
+        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+        OBJECTREF objRef = ObjectFromHandle(gch);
+        return embeddingapi_handle_allc(frame, objRef, object);
+    }
+    EX_CATCH
+    {
+        return E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
 }
 
 // Id access surface
@@ -423,7 +540,7 @@ dotnet_error embeddingapi_get_fieldid(dotnet_object fieldObject, dotnet_fieldid*
     fd->LoadSize(); // CAN THROW, NEEDS PROTECTION
     fd->GetApproxFieldTypeHandleThrowing(); // CAN THROW, NEEDS PROTECTION
 
-    *typeidVar = (dotnet_typeid)fd;
+    *fieldidVar = (dotnet_fieldid)fd;
     return S_OK;
 }
 
@@ -541,20 +658,20 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
 template <class lambda_t>
 bool enumerate_gc_references_in_field_layout(TypeHandle th, uint8_t* field_start, lambda_t exp)
 {
-    if (th.IsObjRef())
+    if (CorTypeInfo::IsObjRef(th.GetInternalCorElementType()))
     {
-        exp(field_start);
+        return exp((uint8_t**)field_start);
     }
     else if (th.IsTypeDesc())
     {
-        return; // TypeDescs that are not object refs do not have gc pointers
+        return true; // TypeDescs that are not object refs do not have gc pointers
     }
 
     MethodTable *pMT = th.GetMethodTable();
 
     if (!pMT->ContainsPointers())
     {
-        return; // Methodtable without gc pointers, does not need additional work
+        return true; // Methodtable without gc pointers, does not need additional work
     }
 
     // This algorithm was originally built for the GC, and is actually designed to work with boxed valuetypes.
@@ -577,12 +694,15 @@ bool enumerate_gc_references_in_field_layout(TypeHandle th, uint8_t* field_start
         uint8_t** ppstop = (uint8_t**)((uint8_t*)parm + cur->GetSeriesSize() + (size));
         while (parm < ppstop)
         {
-            exp(parm);
+            if (!exp(parm))
+                return false;
             parm++;
         }
         cur--;
 
     } while (cur >= last);
+
+    return true;
 }
 
 // Object manipulation apis
@@ -609,6 +729,7 @@ dotnet_error embeddingapi_impl_readmanagedmem(dotnet_frame frame, CorElementType
                     failresult = embeddingapi_handle_alloc(frame, *(OBJECTREF*)pointer, &newHandle);
                     *(dotnet_object*)pointer = newHandle;
                 }
+                return !!SUCCEEDED(failresult);
             });
         return failresult;
     }
@@ -636,7 +757,7 @@ dotnet_error embeddingapi_impl_writemanagedmem(CorElementType et, TypeHandle th,
     if (CorTypeInfo::IsObjRef(et))
         th = TypeHandle(g_pObjectClass);
 
-    if (size > cbData)
+    if (((int32_t)size) > cbDataUnmanaged)
         return E_INVALIDARG;
     
     UINT bytesCopiedSoFar = 0;
@@ -646,7 +767,7 @@ dotnet_error embeddingapi_impl_writemanagedmem(CorElementType et, TypeHandle th,
         enumerate_gc_references_in_field_layout(th, pUnmanagedData, [&bytesCopiedSoFar, pUnmanagedData, pPointerToManagedMemory](uint8_t** pointer)
             {
                 // Copy non-reference object data
-                UINT offsetFromStart = (uint8_t*)pointer - pUnmanagedData;
+                UINT offsetFromStart = (UINT)((uint8_t*)pointer - pUnmanagedData);
                 UINT additionalBytesToCopy = offsetFromStart - bytesCopiedSoFar;
                 if (additionalBytesToCopy > 0)
                 {
@@ -657,13 +778,14 @@ dotnet_error embeddingapi_impl_writemanagedmem(CorElementType et, TypeHandle th,
                 dotnet_object* objectInNonManagedMemory = (dotnet_object*)(pUnmanagedData + bytesCopiedSoFar);
                 SetObjectReference(objectRefInManagedHeap, embeddingapi_get_target(*objectInNonManagedMemory));
                 bytesCopiedSoFar += sizeof(OBJECTREF);
+                return true;
             });
     }
 
     // Copy any remaining non-reference objects
     {
         UINT additionalBytesToCopy = size - bytesCopiedSoFar;
-        memcpy(pPointerToManagedMemory + bytesCopiedSoFar, pData + bytesCopiedSoFar, additionalBytesToCopy);
+        memcpy(pPointerToManagedMemory + bytesCopiedSoFar, pUnmanagedData + bytesCopiedSoFar, additionalBytesToCopy);
     }
 
     return S_OK;
@@ -760,14 +882,12 @@ dotnet_error embeddingapi_read_static_field(dotnet_frame frame, dotnet_fieldid f
 
     GCX_COOP();
 
-    pFD->GetApproxEnclosingMethodTable_NoLogging()->ChekRunClassInitThrowing();
+    pFD->GetApproxEnclosingMethodTable_NoLogging()->CheckRunClassInitThrowing();
 
-    OBJECTREF objRef = embeddingapi_get_target(obj);
-
-    return embeddingapi_impl_readmanagedmem(frame, et, th, pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
+    return embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
 }
 
-dotnet_error embeddingapi_write_static_field(dotnet_object obj, void*pData, int32_t cbData)
+dotnet_error embeddingapi_write_static_field(dotnet_fieldid field, void*pData, int32_t cbData)
 {
     CONTRACTL
     {
@@ -794,9 +914,9 @@ dotnet_error embeddingapi_write_static_field(dotnet_object obj, void*pData, int3
 
     GCX_COOP();
 
-    pFD->GetApproxEnclosingMethodTable_NoLogging()->ChekRunClassInitThrowing();
+    pFD->GetApproxEnclosingMethodTable_NoLogging()->CheckRunClassInitThrowing();
 
-    return embeddingapi_impl_writemanagedmem(et, th, pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
+    return embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
 }
 
 dotnet_error embeddingapi_read_field_on_struct(void *structure, dotnet_fieldid field, void *data, int32_t cbData)
@@ -812,7 +932,7 @@ dotnet_error embeddingapi_read_field_on_struct(void *structure, dotnet_fieldid f
     DWORD offset = pFD->GetOffset();
     UINT size = pFD->GetSize();
 
-    if (cbData < size)
+    if (cbData < (int32_t)size)
         return E_INVALIDARG;
 
     memcpy(data, ((uint8_t*)structure) + offset, size);
@@ -832,7 +952,7 @@ dotnet_error embeddingapi_write_field_on_struct(void *structure, dotnet_fieldid 
     DWORD offset = pFD->GetOffset();
     UINT size = pFD->GetSize();
 
-    if (cbData < size)
+    if (cbData < (int32_t)size)
         return E_INVALIDARG;
 
     memcpy(((uint8_t*)structure) + offset, data, size);
@@ -886,6 +1006,12 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->handle_free = embeddingapi_handle_free;
         pApi->handle_pin = embeddingapi_handle_pin;
         pApi->handle_unpin = embeddingapi_handle_unpin;
+
+        pApi->gchandle_alloc = embeddingapi_gchandle_alloc;
+        pApi->gchandle_alloc_weak = embeddingapi_gchandle_alloc_weak;
+        pApi->gchandle_alloc_weak_track_resurrection = embeddingapi_gchandle_alloc_weak_track_resurrection;
+        pApi->gchandle_free = embeddingapi_gchandle_free;
+        pApi->gchandle_get_target = embeddingapi_gchandle_get_target;
 
         pApi->type_gettype = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::Type_GetType);
         pApi->type_getmethod = (_dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method)GetApiFromManaged(EmbeddingApi::Type_GetMethod);

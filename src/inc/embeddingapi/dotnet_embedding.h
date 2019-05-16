@@ -9,6 +9,8 @@
 
 struct _struct_dotnet_object {};
 typedef _struct_dotnet_object* dotnet_object;
+struct _struct_dotnet_raw_object {};
+typedef _struct_dotnet_raw_object* dotnet_raw_object;
 struct _struct_dotnet_pin {};
 typedef _struct_dotnet_pin* dotnet_pin;
 struct _struct_dotnet_gchandle {};
@@ -22,7 +24,14 @@ typedef _struct_dotnet_methodid* dotnet_methodid;
 struct _struct_dotnet_fieldid {};
 typedef _struct_dotnet_fieldid* dotnet_fieldid;
 
+struct _struct_dotnet_toggleref {};
+typedef _struct_dotnet_toggleref* dotnet_toggleref;
+struct _struct_dotnet_togglerefgroup {};
+typedef _struct_dotnet_togglerefgroup* dotnet_togglerefgroup;
+
 typedef uint32_t dotnet_error;
+
+typedef int32_t (*dotnet_togglerefcallback)(dotnet_rawobject object);
 
 enum dotnet_bindingflags
 {
@@ -94,6 +103,11 @@ typedef dotnet_error(*_dotnet_object_fieldid_voidptr_int32)(dotnet_object,dotnet
 typedef dotnet_error(*_dotnet_frame_fieldid_voidptr_int32)(dotnet_frame,dotnet_fieldid,void*,int32_t);
 typedef dotnet_error(*_dotnet_fieldid_voidptr_int32)(dotnet_fieldid,void*,int32_t);
 typedef dotnet_error(*_dotnet_voidptr_fieldid_voidptr_int32)(void*,dotnet_fieldid,void*,int32_t);
+typedef dotnet_error(*_dotnet_togglerefcallback_out_togglerefgroup)(dotnet_togglerefcallback, dotnet_togglerefgroup*);
+typedef dotnet_error(*_dotnet_togglerefgroup)(dotnet_togglerefgroup);
+typedef dotnet_error(*_dotnet_togglerefgroup_object_out_toggleref)(dotnet_togglerefgroup, dotnet_toggleref*);
+typedef dotnet_error(*_dotnet_togglerefgroup_toggleref)(dotnet_togglerefgroup, dotnet_toggleref);
+typedef dotnet_error(*_dotnet_frame_togglerefgroup_toggleref_out_object)(dotnet_frame, dotnet_togglerefgroup, dotnet_toggleref, dotnet_object*);
 
 #define DOTNET_V1_API_GROUP "DOTNET.0"
 struct dotnet_embedding_api_group
@@ -152,6 +166,13 @@ struct dotnet_embedding_api_group
 
     // Method Invoke
     _dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags method_invoke;
+
+    // Toggle refs
+    _dotnet_togglerefcallback_out_togglerefgroup toggleref_creategroup;
+    _dotnet_togglerefcallback_out_togglerefgroup toggleref_destroygroup;
+    _dotnet_togglerefgroup_object_out_toggleref toggleref_alloc;
+    _dotnet_togglerefgroup_toggleref toggleref_free;
+    _dotnet_frame_togglerefgroup_toggleref_out_object toggleref_get_target;
 };
 
 #endif // __DOTNET_EMBEDDING_H__
