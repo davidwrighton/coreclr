@@ -358,18 +358,22 @@ dotnet_error embeddingapi_gchandle_alloc(dotnet_object obj, dotnet_gchandle *gch
 
     GCX_COOP();
 
+    dotnet_error result;
+
     EX_TRY
     {
         *gchandle = NULL;
         OBJECTREF objRef = embeddingapi_get_target(obj);
         OBJECTHANDLE gch = CreateGlobalHandle(objRef);
         *gchandle = (dotnet_gchandle)gch;
+        result = S_OK;
     }
     EX_CATCH
     {
-        return E_OUTOFMEMORY;
+        result = E_OUTOFMEMORY;
     }
     EX_END_CATCH(SwallowAllExceptions);
+    return result;
 }
 
 dotnet_error embeddingapi_gchandle_alloc_weak(dotnet_object obj, dotnet_gchandle *gchandle)
@@ -385,18 +389,21 @@ dotnet_error embeddingapi_gchandle_alloc_weak(dotnet_object obj, dotnet_gchandle
 
     GCX_COOP();
 
+    dotnet_error result;
     EX_TRY
     {
         *gchandle = NULL;
         OBJECTREF objRef = embeddingapi_get_target(obj);
         OBJECTHANDLE gch = CreateGlobalShortWeakHandle(objRef);
         *gchandle = (dotnet_gchandle)gch;
+        result = S_OK;
     }
     EX_CATCH
     {
-        return E_OUTOFMEMORY;
+        result = E_OUTOFMEMORY;
     }
     EX_END_CATCH(SwallowAllExceptions);
+    return result;
 }
 
 dotnet_error embeddingapi_gchandle_alloc_weak_track_resurrection(dotnet_object obj, dotnet_gchandle *gchandle)
@@ -412,18 +419,21 @@ dotnet_error embeddingapi_gchandle_alloc_weak_track_resurrection(dotnet_object o
 
     GCX_COOP();
 
+    dotnet_error result;
     EX_TRY
     {
         *gchandle = NULL;
         OBJECTREF objRef = embeddingapi_get_target(obj);
         OBJECTHANDLE gch = CreateGlobalLongWeakHandle(objRef);
         *gchandle = (dotnet_gchandle)gch;
+        result = S_OK;
     }
     EX_CATCH
     {
-        return E_OUTOFMEMORY;
+        result = E_OUTOFMEMORY;
     }
     EX_END_CATCH(SwallowAllExceptions);
+    return result;
 }
 
 dotnet_error embeddingapi_gchandle_free(dotnet_gchandle gchandle)
@@ -439,16 +449,19 @@ dotnet_error embeddingapi_gchandle_free(dotnet_gchandle gchandle)
 
     GCX_COOP();
 
+    dotnet_error result;
     EX_TRY
     {
         OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
         DestroyTypedHandle(gch);
+        result = S_OK;
     }
     EX_CATCH
     {
-        return E_OUTOFMEMORY;
+        result = E_OUTOFMEMORY;
     }
     EX_END_CATCH(SwallowAllExceptions);
+    return result;
 }
 
 dotnet_error embeddingapi_gchandle_get_target(dotnet_frame frame, dotnet_gchandle gchandle, dotnet_object *object)
@@ -464,17 +477,135 @@ dotnet_error embeddingapi_gchandle_get_target(dotnet_frame frame, dotnet_gchandl
 
     GCX_COOP();
 
+    dotnet_error result;
     EX_TRY
     {
         OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
         OBJECTREF objRef = ObjectFromHandle(gch);
-        return embeddingapi_handle_allc(frame, objRef, object);
+        result = embeddingapi_handle_alloc(frame, objRef, object);
     }
     EX_CATCH
     {
-        return E_OUTOFMEMORY;
+        result = E_OUTOFMEMORY;
     }
     EX_END_CATCH(SwallowAllExceptions);
+    return result;
+}
+
+dotnet_error embeddingapi_toggleref_creategroup(dotnet_togglerefcallback callback, dotnet_togglerefgroup *togglerefgroup)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    dotnet_error result;
+    EX_TRY
+    {
+        GCHandleUtilities::GetGCHandleManager()->CreateHandleStore((ref_counted_handle_callback_func*)callback);
+        result = S_OK;
+    }
+    EX_CATCH
+    {
+        result = E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+
+    return result;
+}
+
+dotnet_error embeddingapi_toggleref_alloc(dotnet_togglerefgroup togglerefgroup, dotnet_object obj, dotnet_toggleref *gchandle)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    dotnet_error result;
+    EX_TRY
+    {
+        *gchandle = NULL;
+        OBJECTREF objRef = embeddingapi_get_target(obj);
+        IGCHandleStore *store = (IGCHandleStore*)togglerefgroup;
+        OBJECTHANDLE gch = CreateRefcountedHandle(store, objRef);
+        *gchandle = (dotnet_toggleref)gch;
+        result = S_OK;
+    }
+    EX_CATCH
+    {
+        result = E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+
+    return result;
+}
+
+dotnet_error embeddingapi_toggleref_free(dotnet_togglerefgroup togglerefgroup, dotnet_toggleref gchandle)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    dotnet_error result;
+    EX_TRY
+    {
+        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+        DestroyTypedHandle(gch);
+        result = S_OK;
+    }
+    EX_CATCH
+    {
+        result = E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+
+    return result;
+}
+
+dotnet_error embeddingapi_toggleref_get_target(dotnet_frame frame, dotnet_togglerefgroup togglerefgroup, dotnet_toggleref gchandle, dotnet_object *object)
+{
+    CONTRACTL
+    {
+        THROWS;
+        GC_TRIGGERS;
+        MODE_PREEMPTIVE;
+        EE_THREAD_REQUIRED;
+    }
+    CONTRACTL_END;
+
+    GCX_COOP();
+
+    dotnet_error result;
+    EX_TRY
+    {
+        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+        OBJECTREF objRef = ObjectFromHandle(gch);
+        result = embeddingapi_handle_alloc(frame, objRef, object);
+    }
+    EX_CATCH
+    {
+        result = E_OUTOFMEMORY;
+    }
+    EX_END_CATCH(SwallowAllExceptions);
+
+    return result;
 }
 
 // Id access surface
@@ -1029,6 +1160,11 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->write_field_on_struct = embeddingapi_write_field_on_struct;
 
         pApi->method_invoke = embeddingapi_method_invoke;
+
+        pApi->toggleref_creategroup = embeddingapi_toggleref_creategroup;
+        pApi->toggleref_alloc = embeddingapi_toggleref_alloc;
+        pApi->toggleref_free = embeddingapi_toggleref_free;
+        pApi->toggleref_get_target = embeddingapi_toggleref_get_target;
 
         return S_OK;
     }

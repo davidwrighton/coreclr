@@ -450,7 +450,7 @@ typedef void (* handle_scan_fn)(Object** pRef, Object* pSec, uint32_t flags, Sca
 typedef bool (* async_pin_enum_fn)(Object* object, void* context);
 
 // Callback passed when creating handle table
-typedef bool ref_counted_handle_callback_func(Object * pObject);
+typedef int32_t ref_counted_handle_callback_func(Object * pObject);
 
 class IGCHandleStore {
 public:

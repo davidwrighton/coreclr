@@ -6362,7 +6362,7 @@ Module* ComCallMethodDesc::GetModule()
     RETURN pClass->GetModule();
 }
 
-bool ComRefCountedHandleCallback(Object *pObject)
+int32_t ComRefCountedHandleCallback(Object *pObject)
 {
     CONTRACTL
     {
@@ -6375,8 +6375,8 @@ bool ComRefCountedHandleCallback(Object *pObject)
     //<REVISIT_TODO>@todo optimize the access to the ref-count
     ComCallWrapper* pWrap = ComCallWrapper::GetWrapperForObject((OBJECTREF)pObject);
 
-    return pWrap != NULL && pWrap->IsWrapperActive();
+    return pWrap != NULL && pWrap->IsWrapperActive() ? 1 : 0;
 #else
-    return false;
+    return 0;
 #endif
 }

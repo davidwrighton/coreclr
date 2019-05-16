@@ -9,8 +9,8 @@
 
 struct _struct_dotnet_object {};
 typedef _struct_dotnet_object* dotnet_object;
-struct _struct_dotnet_raw_object {};
-typedef _struct_dotnet_raw_object* dotnet_raw_object;
+struct _struct_dotnet_rawobject {};
+typedef _struct_dotnet_rawobject* dotnet_rawobject;
 struct _struct_dotnet_pin {};
 typedef _struct_dotnet_pin* dotnet_pin;
 struct _struct_dotnet_gchandle {};
@@ -75,9 +75,9 @@ typedef dotnet_error (*dotnet_getapi)(const char* apiname, void** pFunctions, in
 typedef dotnet_error(*_dotnet_uint32_out_voidptr)(uint32_t,void**);
 typedef dotnet_error(*_dotnet_voidptr)(void*);
 typedef dotnet_error(*_dotnet_object_out_gchandle)(dotnet_object, dotnet_gchandle*);
-typedef dotnet_error(*_dotnet_gchandle);
+typedef dotnet_error(*_dotnet_gchandle)(dotnet_gchandle);
 typedef dotnet_error(*_dotnet_gchandle_out_int8)(dotnet_gchandle, int8_t*);
-typedef dotnet_error(*_dotnet_gchandle_out_object)(dotnet_gchandle, dotnet_object*);
+typedef dotnet_error(*_dotnet_frame_gchandle_out_object)(dotnet_frame, dotnet_gchandle, dotnet_object*);
 typedef dotnet_error(*_dotnet_gchandle_object)(dotnet_gchandle, dotnet_object);
 typedef dotnet_error(*_dotnet_gchandle_gchandle_out_int8)(dotnet_gchandle,dotnet_gchandle, int8_t*);
 typedef dotnet_error(*_dotnet_gchandle_object_out_int8)(dotnet_gchandle,dotnet_object, int8_t*);
@@ -105,7 +105,7 @@ typedef dotnet_error(*_dotnet_fieldid_voidptr_int32)(dotnet_fieldid,void*,int32_
 typedef dotnet_error(*_dotnet_voidptr_fieldid_voidptr_int32)(void*,dotnet_fieldid,void*,int32_t);
 typedef dotnet_error(*_dotnet_togglerefcallback_out_togglerefgroup)(dotnet_togglerefcallback, dotnet_togglerefgroup*);
 typedef dotnet_error(*_dotnet_togglerefgroup)(dotnet_togglerefgroup);
-typedef dotnet_error(*_dotnet_togglerefgroup_object_out_toggleref)(dotnet_togglerefgroup, dotnet_toggleref*);
+typedef dotnet_error(*_dotnet_togglerefgroup_object_out_toggleref)(dotnet_togglerefgroup, dotnet_object, dotnet_toggleref*);
 typedef dotnet_error(*_dotnet_togglerefgroup_toggleref)(dotnet_togglerefgroup, dotnet_toggleref);
 typedef dotnet_error(*_dotnet_frame_togglerefgroup_toggleref_out_object)(dotnet_frame, dotnet_togglerefgroup, dotnet_toggleref, dotnet_object*);
 
@@ -135,7 +135,7 @@ struct dotnet_embedding_api_group
     _dotnet_object_out_gchandle gchandle_alloc_weak;
     _dotnet_object_out_gchandle gchandle_alloc_weak_track_resurrection;
     _dotnet_gchandle gchandle_free;
-    _dotnet_gchandle_out_object gchandle_get_target;
+    _dotnet_frame_gchandle_out_object gchandle_get_target;
     _dotnet_gchandle_object gchandle_set_target;
     _dotnet_gchandle_gchandle_out_int8 gchandle_reference_equal;
     _dotnet_gchandle_object_out_int8 gchandle_reference_equal_object;
@@ -169,7 +169,7 @@ struct dotnet_embedding_api_group
 
     // Toggle refs
     _dotnet_togglerefcallback_out_togglerefgroup toggleref_creategroup;
-    _dotnet_togglerefcallback_out_togglerefgroup toggleref_destroygroup;
+    _dotnet_togglerefgroup toggleref_destroygroup;
     _dotnet_togglerefgroup_object_out_toggleref toggleref_alloc;
     _dotnet_togglerefgroup_toggleref toggleref_free;
     _dotnet_frame_togglerefgroup_toggleref_out_object toggleref_get_target;
