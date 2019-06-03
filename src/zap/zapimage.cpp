@@ -562,6 +562,7 @@ void ZapImage::AllocateVirtualSections()
         if (IsReadyToRunCompilation())
         {
             m_pAvailableTypesSection = NewVirtualSection(pTextSection, IBCUnProfiledSection | WarmRange | ReadonlySection);
+            m_pAttributePresenceSection = NewVirtualSection(pTextSection, IBCUnProfiledSection | WarmRange | ReadonlyDataSection, 16/* Must be 16 byte aligned */);
         }
 #endif    
 
@@ -1833,6 +1834,7 @@ void ZapImage::Compile()
         OutputEntrypointsTableForReadyToRun();
         OutputDebugInfoForReadyToRun();
         OutputTypesTableForReadyToRun(m_pMDImport);
+        OutputAttributePresenceFilter(m_pMDImport);
         OutputInliningTableForReadyToRun();
         OutputProfileDataForReadyToRun();
         if (IsLargeVersionBubbleEnabled())
@@ -3573,6 +3575,10 @@ void ZapImage::Error(mdToken token, HRESULT hr, UINT resID,  LPCWSTR message)
     if ((resID == IDS_IBC_MISSING_EXTERNAL_TYPE) ||
         (resID == IDS_IBC_MISSING_EXTERNAL_METHOD))
     {
+        // Suppress printing IBC related warnings except in verbose mode.
+        if (m_zapper->m_pOpt->m_ignoreErrors && !m_zapper->m_pOpt->m_verbose)
+            return;
+
         // Supress printing of "The generic type/method specified by the IBC data is not available to this assembly"
         level = CORZAP_LOGLEVEL_INFO;
     }   

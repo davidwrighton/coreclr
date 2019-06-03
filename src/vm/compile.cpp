@@ -692,14 +692,14 @@ BOOL IsAssemblySpecifiedInCA(ASSEMBLY * pAssembly, SString dependencyNameFromCA)
     // First, check for this:
     //    DependencyAttribute("Foo", LoadHint.Always)
     StackSString simpleName(SString::Utf8, pAssembly->GetSimpleName());
-    if (simpleName.EqualsCaseInsensitive(dependencyNameFromCA, PEImage::GetFileSystemLocale()))
+    if (simpleName.EqualsCaseInsensitive(dependencyNameFromCA))
         return TRUE;
 
     // Now, check for this:
     //    DependencyAttribute("Foo,", LoadHint.Always)
     SString comma(W(","));
     StackSString simpleNameWithComma(simpleName, comma);
-    if (simpleNameWithComma.EqualsCaseInsensitive(dependencyNameFromCA, PEImage::GetFileSystemLocale()))
+    if (simpleNameWithComma.EqualsCaseInsensitive(dependencyNameFromCA))
         return TRUE;
 
     // Finally:
@@ -1354,30 +1354,6 @@ BOOL CanDeduplicateCode(CORINFO_METHOD_HANDLE method, CORINFO_METHOD_HANDLE dupl
     // For now, the deduplication is supported for IL stubs only
     DynamicMethodDesc * pMethod = GetMethod(method)->AsDynamicMethodDesc();
     DynamicMethodDesc * pDuplicateMethod = GetMethod(duplicateMethod)->AsDynamicMethodDesc();
-
-    //
-    // Make sure that the return types match (for code:Thread::HijackThread)
-    //
-
-#ifdef _TARGET_X86_
-    MetaSig msig1(pMethod);
-    MetaSig msig2(pDuplicateMethod);
-    if (!msig1.HasFPReturn() != !msig2.HasFPReturn())
-        return FALSE;
-#endif // _TARGET_X86_
-
-    MetaSig::RETURNTYPE returnType = pMethod->ReturnsObject();
-    MetaSig::RETURNTYPE returnTypeDuplicate = pDuplicateMethod->ReturnsObject();
-
-    if (returnType != returnTypeDuplicate)
-        return FALSE;
-
-    //
-    // Do not enable deduplication of structs returned in registers
-    //
-
-    if (returnType == MetaSig::RETVALUETYPE)
-        return FALSE;
 
     //
     // Make sure that the IL stub flags match

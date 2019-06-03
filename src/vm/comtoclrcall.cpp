@@ -136,30 +136,19 @@ extern "C" HRESULT STDCALL StubRareDisableHRWorker(Thread *pThread)
     // dangerous mode.  If we call managed code, we will potentially be active in
     // the GC heap, even as GC's are occuring!
 
-    // Check for ShutDown scenario.  This happens only when we have initiated shutdown 
-    // and someone is trying to call in after the CLR is suspended.  In that case, we
-    // must either raise an unmanaged exception or return an HRESULT, depending on the
-    // expectations of our caller.
-    if (!CanRunManagedCode())
+    // We must do the following in this order, because otherwise we would be constructing
+    // the exception for the abort without synchronizing with the GC.  Also, we have no
+    // CLR SEH set up, despite the fact that we may throw a ThreadAbortException.
+    pThread->RareDisablePreemptiveGC();
+    EX_TRY
     {
-        hr = E_PROCESS_SHUTDOWN_REENTRY;
+        pThread->HandleThreadAbort();
     }
-    else
+    EX_CATCH
     {
-        // We must do the following in this order, because otherwise we would be constructing
-        // the exception for the abort without synchronizing with the GC.  Also, we have no
-        // CLR SEH set up, despite the fact that we may throw a ThreadAbortException.
-        pThread->RareDisablePreemptiveGC();
-        EX_TRY
-        {
-            pThread->HandleThreadAbort();
-        }
-        EX_CATCH
-        {
-            hr = GET_EXCEPTION()->GetHR();
-        }
-        EX_END_CATCH(SwallowAllExceptions);
+        hr = GET_EXCEPTION()->GetHR();
     }
+    EX_END_CATCH(SwallowAllExceptions);
 
     // should always be in coop mode here
     _ASSERTE(pThread->PreemptiveGCDisabled());
@@ -1119,7 +1108,7 @@ void ComCallMethodDesc::InitNativeInfo()
             // Look up the best fit mapping info via Assembly & Interface level attributes
             BOOL BestFit = TRUE;
             BOOL ThrowOnUnmappableChar = FALSE;
-            ReadBestFitCustomAttribute(fsig.GetModule()->GetMDImport(), pFD->GetEnclosingMethodTable()->GetCl(), &BestFit, &ThrowOnUnmappableChar);
+            ReadBestFitCustomAttribute(fsig.GetModule(), pFD->GetEnclosingMethodTable()->GetCl(), &BestFit, &ThrowOnUnmappableChar);
 
             MarshalInfo info(fsig.GetModule(), fsig.GetArgProps(), fsig.GetSigTypeContext(), pFD->GetMemberDef(), MarshalInfo::MARSHAL_SCENARIO_COMINTEROP,
                              (CorNativeLinkType)0, (CorNativeLinkFlags)0, 
@@ -1423,7 +1412,7 @@ void ComCall::PopulateComCallMethodDesc(ComCallMethodDesc *pCMD, DWORD *pdwStubF
         _ASSERTE(IsMemberVisibleFromCom(pFD->GetApproxEnclosingMethodTable(), pFD->GetMemberDef(), mdTokenNil) && "Calls are not permitted on this member since it isn't visible from COM. The only way you can have reached this code path is if your native interface doesn't match the managed interface.");
 
         MethodTable *pMT = pFD->GetEnclosingMethodTable();
-        ReadBestFitCustomAttribute(pMT->GetMDImport(), pMT->GetCl(), &BestFit, &ThrowOnUnmappableChar);
+        ReadBestFitCustomAttribute(pMT->GetModule(), pMT->GetCl(), &BestFit, &ThrowOnUnmappableChar);
     }
     else
     {
