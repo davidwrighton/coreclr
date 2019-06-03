@@ -1001,6 +1001,12 @@ void GCToEEInterface::HandleFatalError(unsigned int exitCode)
 bool GCToEEInterface::EagerFinalized(Object* obj)
 {
     MethodTable* pMT = obj->GetGCSafeMethodTable();
+    if (pMT->IsEagerFinalized())
+    {
+        EagerFinalizer finalizer = s_eagerFinalizers[pMT->GetEagerFinalizationQueue()];
+        if (finalizer != NULL)
+            return !!finalizer(obj);
+    }
     if (pMT == pWeakReferenceMT ||
         pMT->GetCanonicalMethodTable() == pWeakReferenceOfTCanonMT)
     {

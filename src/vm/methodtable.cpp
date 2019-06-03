@@ -10439,3 +10439,28 @@ BOOL MethodTable::IsPinnable()
         return IsBlittable();
     }
 }
+
+#if !defined(DACCESS_COMPILE) && !defined(CROSSGEN_COMPILE)
+
+// Eager finalization queue 0 is always null
+// FinalizeWeakReference always uses eager finalization queue 1
+EagerFinalizer s_eagerFinalizers[MAX_EAGER_FINALIZERS] = { NULL, FinalizeWeakReference };
+LONG s_nextAvailableEagerFinalizer = 2;
+
+DWORD AllocateEagerFinalizer()
+{
+    DWORD allocatedEagerFinalizer = (DWORD)InterlockedIncrement(&threadCB->NumWaitHandles);
+    if (allocatedEagerFinalizer >= MAX_EAGER_FINALIZERS)
+    {
+        ThrowHR(E_OUTOFMEMORY);
+    }
+    s_eagerFinalizers[allocatedEagerFinalizer] = NULL;
+    return allocatedEagerFinalizer;
+}
+
+void SetEagerFinalizer(MethodTable *pMT, EagerFinalizer finalizer)
+{
+    InterlockedExchangePointer(&s_eagerFinalizers[pMT->GetEagerFinalizationQueue()], finalizer);
+}
+
+#endif // !defined(DACCESS_COMPILE) && !defined(CROSSGEN_COMPILE)

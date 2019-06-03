@@ -286,6 +286,16 @@ typedef DPTR(CrossModuleGenericsStaticsInfo) PTR_CrossModuleGenericsStaticsInfo;
 struct RCWPerTypeData;
 #endif // FEATURE_COMINTEROP
 
+#if !defined(CROSSGEN_COMPILE) && !defined(DACCESS_COMPILE)
+typedef BOOL (*EagerFinalizer)(Object*);
+#define MAX_EAGER_FINALIZERS 16
+extern EagerFinalizer s_eagerFinalizers[MAX_EAGER_FINALIZERS];
+
+DWORD AllocateEagerFinalizer();
+void SetEagerFinalizer(MethodTable *pMT, EagerFinalizer finalizer);
+
+#endif // !defined(CROSSGEN_COMPILE) && !defined(DACCESS_COMPILE)
+
 //
 // This struct consolidates the writeable parts of the MethodTable
 // so that we can layout a read-only MethodTable with a pointer
@@ -333,6 +343,9 @@ struct MethodTableWriteableData
 
 #endif // FEATURE_PREJIT
 
+        enum_flag_EagerFinalizerMask = 0x0F000000,
+        EagerFinalizerShift = 24,
+
 #ifdef _DEBUG
         enum_flag_ParentMethodTablePointerValid =  0x40000000,
         enum_flag_HasInjectedInterfaceDuplicates = 0x80000000,
@@ -376,6 +389,26 @@ public:
         m_dwFlags |= enum_flag_ParentMethodTablePointerValid;
     }
 #endif
+
+    inline bool IsEagerFinalized() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return (eagerFinalizerQueue & enum_flag_EagerFinalizerMask) != 0;
+    }
+
+    inline DWORD GetEagerFinalizationQueue() const
+    {
+        LIMITED_METHOD_DAC_CONTRACT;
+        return (m_dwFlags & enum_flag_EagerFinalizerMask) >> EagerFinalizerShift;
+    }
+
+    inline void SetEagerFinalizerQueue(DWORD eagerFinalizerQueue)
+    {
+        LIMITED_METHOD_CONTRACT;
+        _ASSERTE((enum_flag_EagerFinalizerMask >> EagerFinalizerShift) + 1 == MAX_EAGER_FINALIZERS);
+        _ASSERTE(eagerFinalizerQueue < MAX_EAGER_FINALIZERS);
+        m_dwFlags |= eagerFinalizerQueue << EagerFinalizerShift;
+    }
 
 #ifdef FEATURE_PREJIT
 
@@ -1003,6 +1036,16 @@ public:
     BOOL IsWriteable();
 
 #endif // FEATURE_PREJIT
+
+    bool IsEagerFinalized() const
+    {
+        return GetWriteableData_NoLogging()->IsEagerFinalized();
+    }
+
+    inline DWORD GetEagerFinalizationQueue() const
+    {
+        return GetWriteableData_NoLogging()->GetEagerFinalizationQueue();
+    }
 
     void AllocateRegularStaticBoxes();
     static OBJECTREF AllocateStaticBox(MethodTable* pFieldMT, BOOL fPinned, OBJECTHANDLE* pHandle = 0);

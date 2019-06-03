@@ -484,7 +484,7 @@ FCIMPLEND
 
 // This entrypoint is also used for direct finalization by the GC. Note that we cannot depend on the runtime being suspended
 // when this is called because of background GC. Background GC is going to call this method while user managed code is running.
-void FinalizeWeakReference(Object * obj)
+BOOL FinalizeWeakReference(Object * obj)
 {
     CONTRACTL
     {
@@ -533,6 +533,8 @@ void FinalizeWeakReference(Object * obj)
             DestroyTypedHandle(handleToDestroy);
         }
     }
+
+    return 1;
 }
 
 FCIMPL1(void, WeakReferenceNative::Finalize, WeakReferenceObject * pThis)

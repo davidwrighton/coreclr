@@ -23,7 +23,7 @@ extern MethodTable* pWeakReferenceMT;
 extern MethodTable* pWeakReferenceOfTCanonMT;
 
 // Finalizes a weak reference directly.
-extern void FinalizeWeakReference(Object* obj);
+extern BOOL FinalizeWeakReference(Object* obj);
 
 namespace standalone
 {
