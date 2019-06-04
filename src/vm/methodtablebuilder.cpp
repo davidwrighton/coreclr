@@ -10191,6 +10191,48 @@ MethodTableBuilder::SetupMethodTable2(
         pMT->SetHasRCWPerTypeData();
 #endif // FEATURE_COMINTEROP
 
+    bool inheritEagerFinalizationFromParent = false;
+
+    if (!IsInterface() && !IsValueClass())
+    {
+        inheritEagerFinalizationFromParent = GetParentMethodTable() != NULL && GetParentMethodTable()->IsEagerFinalizeInherited();
+
+        const BYTE * pVal;
+        ULONG cbVal;
+        if (S_OK == GetCustomAttribute(GetCl(), WellKnownAttribute::SupportsEagerFinalization, (const void **) &pVal, &cbVal))
+        {
+            CustomAttributeParser cap(pVal, cbVal);
+            IfFailThrow(cap.SkipProlog());
+            UINT8 u1;
+            IfFailThrow(cap.GetU1(&u1));
+#ifndef CROSSGEN_COMPILE
+            bool eagerFinalizerBehaviorShouldBeInherited = !!u1;
+
+            if (!bmtGenerics->HasInstantiation() || bmtGenerics->fTypicalInstantiation)
+            {
+                // Allocate new eager finalization detail
+                pMT->GetWriteableDataForWrite_NoLogging()->SetEagerFinalizerQueue(AllocateEagerFinalizer(), eagerFinalizerBehaviorShouldBeInherited);
+            }
+            else
+            {
+                MethodTable* typicalInstantiation = ClassLoader::LoadTypeDefOrRefThrowing(
+                    GetModule(), 
+                    GetCl(), 
+                    ClassLoader::ThrowIfNotFound, 
+                    ClassLoader::PermitUninstDefOrRef, 
+                    tdNoTypes, 
+                    CLASS_LOAD_APPROXPARENTS).AsMethodTable();
+                pMT->GetWriteableDataForWrite_NoLogging()->SetEagerFinalizerQueue(typicalInstantiation->GetEagerFinalizationQueue(), eagerFinalizerBehaviorShouldBeInherited);
+            }
+#endif // !CROSSGEN_COMPILE
+            inheritEagerFinalizationFromParent = false;
+        }
+    }
+
+    if (inheritEagerFinalizationFromParent)
+    {
+        pMT->GetWriteableDataForWrite_NoLogging()->SetEagerFinalizerQueue(GetParentMethodTable()->GetEagerFinalizationQueue(), inheritEagerFinalizationFromParent);
+    }
 
     if (IsInterface())
         pMT->SetIsInterface();

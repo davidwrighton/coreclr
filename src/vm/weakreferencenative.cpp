@@ -389,8 +389,9 @@ FORCEINLINE void ReleaseWeakHandleSpinLock(WEAKREFERENCEREF pThis, OBJECTHANDLE 
 
 //************************************************************************
 
-MethodTable *pWeakReferenceMT = NULL;
-MethodTable *pWeakReferenceOfTCanonMT = NULL;
+bool hasInitializedWeakReferenceEagerFinalizer = false;
+bool hasInitializedWeakReferenceOfTEagerFinalizer = false;
+BOOL FinalizeWeakReference(Object * obj);
 
 //************************************************************************
 
@@ -412,10 +413,11 @@ FCIMPL3(void, WeakReferenceNative::Create, WeakReferenceObject * pThisUNSAFE, Ob
     if (gc.pThis == NULL)
         COMPlusThrow(kNullReferenceException);
 
-    if (pWeakReferenceMT == NULL)
-        pWeakReferenceMT = MscorlibBinder::GetClass(CLASS__WEAKREFERENCE);
-
-    _ASSERTE(gc.pThis->GetMethodTable()->CanCastToClass(pWeakReferenceMT));
+    if (!hasInitializedWeakReferenceEagerFinalizer)
+    {
+        SetEagerFinalizer(MscorlibBinder::GetClass(CLASS__WEAKREFERENCE), FinalizeWeakReference);
+        hasInitializedWeakReferenceEagerFinalizer = true;
+    }
 
     // Create the handle.
 #ifdef FEATURE_COMINTEROP
@@ -455,10 +457,11 @@ FCIMPL3(void, WeakReferenceOfTNative::Create, WeakReferenceObject * pThisUNSAFE,
     if (gc.pThis == NULL)
         COMPlusThrow(kNullReferenceException);
 
-    if (pWeakReferenceOfTCanonMT == NULL)
-        pWeakReferenceOfTCanonMT = gc.pThis->GetMethodTable()->GetCanonicalMethodTable();
-
-    _ASSERTE(gc.pThis->GetMethodTable()->GetCanonicalMethodTable() == pWeakReferenceOfTCanonMT);
+    if (!hasInitializedWeakReferenceOfTEagerFinalizer)
+    {
+        SetEagerFinalizer(MscorlibBinder::GetClass(CLASS__WEAKREFERENCEGENERIC), FinalizeWeakReference);
+        hasInitializedWeakReferenceOfTEagerFinalizer = true;
+    }
 
     // Create the handle.
 #ifdef FEATURE_COMINTEROP

@@ -357,6 +357,8 @@ ClassLoader::CreateTypeHandleForNonCanonicalGenericInstantiation(
 
     pMT->m_wNumInterfaces = pOldMT->m_wNumInterfaces;
 
+    pMTWriteableData->SetEagerFinalizerQueue(pOldMT->GetEagerFinalizationQueue(), pOldMT->IsEagerFinalizeInherited());
+
 #ifdef FEATURE_TYPEEQUIVALENCE 
     if (pMT->IsInterface() && !pMT->HasTypeEquivalence())
     {

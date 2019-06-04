@@ -13,10 +13,10 @@ namespace System.Runtime.InteropServices
     unsafe class EmbeddingApi
     {
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern IntPtr nAllocHandle(IntPtr frame, object obj);
+        private static extern IntPtr nAllocHandle(IntPtr frame, object? obj);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern object nGetTarget(IntPtr objHandle);
+        private static extern object? nGetTarget(IntPtr objHandle);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern void nPopFrame(IntPtr frame);
@@ -29,8 +29,10 @@ namespace System.Runtime.InteropServices
         {
             try
             {
-                string s = UTF8Marshaler.ConvertToManaged(utf8Str);
-                Type t = Type.GetType(s);
+                string? s = UTF8Marshaler.ConvertToManaged(utf8Str);
+                if (s == null)
+                    throw new ArgumentNullException("str");
+                Type? t = Type.GetType(s);
                 *result = nAllocHandle(frame, t);
                 return 0;
             }
@@ -45,12 +47,23 @@ namespace System.Runtime.InteropServices
         {
             try
             {
-                Type type = (Type)nGetTarget(typeHandle);
-                string methodName = UTF8Marshaler.ConvertToManaged(methodNameUtf8);
+                Type? type = (Type?)nGetTarget(typeHandle);
+                if (type == null)
+                    throw new ArgumentNullException("type");
+
+                string? methodName = UTF8Marshaler.ConvertToManaged(methodNameUtf8);
+                if (methodName == null)
+                    throw new ArgumentNullException("methodName");
+
                 Type[] typeOfArguments = new Type[cTypes];
                 for (int i = 0; i < cTypes; i++)
-                    typeOfArguments[i] = (Type)nGetTarget(types[i]);
-                MethodInfo method = type.GetMethod(methodName, flags, null, typeOfArguments, null);
+                {
+                    Type? argumentType = (Type?)nGetTarget(types[i]);
+                    if (argumentType == null)
+                        throw new ArgumentNullException("types");
+                    typeOfArguments[i] = argumentType;
+                }
+                MethodInfo? method = type.GetMethod(methodName, flags, null, typeOfArguments, null);
                 *methodHandle = nAllocHandle(frame, method);
                 return 0;
             }
@@ -65,7 +78,7 @@ namespace System.Runtime.InteropServices
         {
             try
             {
-                string str = UTF8Marshaler.ConvertToManaged(utf8Str);
+                string? str = UTF8Marshaler.ConvertToManaged(utf8Str);
                 *result = nAllocHandle(frame, str);
                 return 0;
             }
@@ -86,7 +99,7 @@ namespace System.Runtime.InteropServices
         private static IntPtr GetApi(int helperEnum)
         {
             GetApiHelperEnum helper = (GetApiHelperEnum)helperEnum;
-            Delegate del = null;
+            Delegate? del = null;
 
             switch (helper)
             {
@@ -95,7 +108,10 @@ namespace System.Runtime.InteropServices
                 case GetApiHelperEnum.String_AllocUtf8: del = (String_AllocUtf8Delegate)String_AllocUtf8; break;
             }
 
-            return Marshal.GetFunctionPointerForDelegate(del);
+            if (del != null)
+                return Marshal.GetFunctionPointerForDelegate(del);
+            else
+                return IntPtr.Zero;
         }
     }
 }

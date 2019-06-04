@@ -287,9 +287,9 @@ typedef DPTR(CrossModuleGenericsStaticsInfo) PTR_CrossModuleGenericsStaticsInfo;
 struct RCWPerTypeData;
 #endif // FEATURE_COMINTEROP
 
-#if !defined(CROSSGEN_COMPILE) && !defined(DACCESS_COMPILE)
-typedef BOOL (*EagerFinalizer)(Object*);
 #define MAX_EAGER_FINALIZERS 16
+#if !defined(CROSSGEN_COMPILE) && !defined(DACCESS_COMPILE)
+typedef int32_t (*EagerFinalizer)(Object*);
 extern EagerFinalizer s_eagerFinalizers[MAX_EAGER_FINALIZERS];
 
 DWORD AllocateEagerFinalizer();
@@ -346,6 +346,7 @@ struct MethodTableWriteableData
 
         enum_flag_EagerFinalizerMask = 0x0F000000,
         EagerFinalizerShift = 24,
+        enum_flag_EagerFinalizeInherited = 0x10000000,
 
 #ifdef _DEBUG
         enum_flag_ParentMethodTablePointerValid =  0x40000000,
@@ -394,7 +395,13 @@ public:
     inline bool IsEagerFinalized() const
     {
         LIMITED_METHOD_CONTRACT;
-        return (eagerFinalizerQueue & enum_flag_EagerFinalizerMask) != 0;
+        return (m_dwFlags & enum_flag_EagerFinalizerMask) != 0;
+    }
+
+    inline bool IsEagerFinalizeInherited() const
+    {
+        LIMITED_METHOD_CONTRACT;
+        return (m_dwFlags & enum_flag_EagerFinalizeInherited) != 0;
     }
 
     inline DWORD GetEagerFinalizationQueue() const
@@ -403,12 +410,14 @@ public:
         return (m_dwFlags & enum_flag_EagerFinalizerMask) >> EagerFinalizerShift;
     }
 
-    inline void SetEagerFinalizerQueue(DWORD eagerFinalizerQueue)
+    inline void SetEagerFinalizerQueue(DWORD eagerFinalizerQueue, bool inherited)
     {
         LIMITED_METHOD_CONTRACT;
         _ASSERTE((enum_flag_EagerFinalizerMask >> EagerFinalizerShift) + 1 == MAX_EAGER_FINALIZERS);
         _ASSERTE(eagerFinalizerQueue < MAX_EAGER_FINALIZERS);
         m_dwFlags |= eagerFinalizerQueue << EagerFinalizerShift;
+        if (inherited)
+            m_dwFlags |= enum_flag_EagerFinalizeInherited;
     }
 
 #ifdef FEATURE_PREJIT
@@ -1041,6 +1050,11 @@ public:
     bool IsEagerFinalized() const
     {
         return GetWriteableData_NoLogging()->IsEagerFinalized();
+    }
+
+    bool IsEagerFinalizeInherited() const
+    {
+        return GetWriteableData_NoLogging()->IsEagerFinalizeInherited();
     }
 
     inline DWORD GetEagerFinalizationQueue() const

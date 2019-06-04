@@ -16,15 +16,6 @@
 
 #include "gctoclreventsink.h"
 
-// the method table for the WeakReference class
-extern MethodTable* pWeakReferenceMT;
-
-// The canonical method table for WeakReference<T>
-extern MethodTable* pWeakReferenceOfTCanonMT;
-
-// Finalizes a weak reference directly.
-extern BOOL FinalizeWeakReference(Object* obj);
-
 namespace standalone
 {
 

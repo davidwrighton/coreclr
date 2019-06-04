@@ -967,12 +967,6 @@ bool GCToEEInterface::EagerFinalized(Object* obj)
         if (finalizer != NULL)
             return !!finalizer(obj);
     }
-    if (pMT == pWeakReferenceMT ||
-        pMT->GetCanonicalMethodTable() == pWeakReferenceOfTCanonMT)
-    {
-        FinalizeWeakReference(obj);
-        return true;
-    }
 
     return false;
 }

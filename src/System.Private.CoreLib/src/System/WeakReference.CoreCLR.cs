@@ -8,6 +8,7 @@ using System.Diagnostics;
 
 namespace System
 {
+    [SupportsEagerFinalization(false)]
     public partial class WeakReference : ISerializable
     {
         // If you fix bugs here, please fix them in WeakReference<T> at the same time.

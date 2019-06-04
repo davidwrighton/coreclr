@@ -8,6 +8,7 @@ using System.Runtime.CompilerServices;
 
 namespace System
 {
+    [SupportsEagerFinalization(false)]
     public sealed partial class WeakReference<T> : ISerializable
         where T : class?
     {

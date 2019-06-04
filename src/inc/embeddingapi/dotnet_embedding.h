@@ -33,6 +33,8 @@ typedef uint32_t dotnet_error;
 
 typedef int32_t (*dotnet_togglerefcallback)(dotnet_rawobject object);
 
+typedef int32_t (*dotnet_eagerfinalizeobjectcallback)(dotnet_rawobject object);
+
 enum dotnet_bindingflags
 {
     dotnet_bindingflags_Default = 0,
@@ -108,6 +110,7 @@ typedef dotnet_error(*_dotnet_togglerefgroup)(dotnet_togglerefgroup);
 typedef dotnet_error(*_dotnet_togglerefgroup_object_out_toggleref)(dotnet_togglerefgroup, dotnet_object, dotnet_toggleref*);
 typedef dotnet_error(*_dotnet_togglerefgroup_toggleref)(dotnet_togglerefgroup, dotnet_toggleref);
 typedef dotnet_error(*_dotnet_frame_togglerefgroup_toggleref_out_object)(dotnet_frame, dotnet_togglerefgroup, dotnet_toggleref, dotnet_object*);
+typedef dotnet_error(*_dotnet_typeid_eagerfinalizeobjectcallback)(dotnet_typeid, dotnet_eagerfinalizeobjectcallback);
 
 #define DOTNET_V1_API_GROUP "DOTNET.0"
 struct dotnet_embedding_api_group
@@ -173,6 +176,9 @@ struct dotnet_embedding_api_group
     _dotnet_togglerefgroup_object_out_toggleref toggleref_alloc;
     _dotnet_togglerefgroup_toggleref toggleref_free;
     _dotnet_frame_togglerefgroup_toggleref_out_object toggleref_get_target;
+
+    // Eager finalization
+    _dotnet_typeid_eagerfinalizeobjectcallback register_eager_finalization_callback;
 };
 
 #endif // __DOTNET_EMBEDDING_H__

@@ -1090,6 +1090,22 @@ dotnet_error embeddingapi_write_field_on_struct(void *structure, dotnet_fieldid 
     return S_OK;
 }
 
+dotnet_error embeddingapi_register_eager_finalization_callback(dotnet_typeid type, dotnet_eagerfinalizeobjectcallback finalizeCallback)
+{
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    if (th.IsTypeDesc())
+        return E_INVALIDARG;
+    
+    MethodTable* pMT = th.AsMethodTable();
+
+    if (!pMT->IsEagerFinalized())
+        return E_INVALIDARG;
+
+    SetEagerFinalizer(pMT, (EagerFinalizer)finalizeCallback);
+
+    return S_OK;
+}
+
 // Setup embedding api infrastructure
 static void* GetApiFromManaged(EmbeddingApi::GetApiHelperEnum api)
 {
@@ -1165,6 +1181,8 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->toggleref_alloc = embeddingapi_toggleref_alloc;
         pApi->toggleref_free = embeddingapi_toggleref_free;
         pApi->toggleref_get_target = embeddingapi_toggleref_get_target;
+
+        pApi->register_eager_finalization_callback = embeddingapi_register_eager_finalization_callback;
 
         return S_OK;
     }
