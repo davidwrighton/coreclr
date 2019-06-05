@@ -129,6 +129,7 @@ typedef dotnet_error(*_dotnet_voidptr_out_runtime_callbacks_handle)(void*, dotne
 typedef dotnet_error(*_dotnet_runtime_callbacks_handle_threadstarted)(dotnet_runtime_callbacks_handle, dotnet_threadstarted);
 typedef dotnet_error(*_dotnet_runtime_callbacks_handle_threadstopped)(dotnet_runtime_callbacks_handle, dotnet_threadstopped);
 typedef dotnet_error(*_dotnet_runtime_callbacks_handle_gc_event)(dotnet_runtime_callbacks_handle, dotnet_gc_event);
+typedef void(*_dotnet_rawobject_fieldid_voidptr_int32)(dotnet_rawobject,dotnet_fieldid,void*,int32_t);
 
 #define DOTNET_V1_API_GROUP "DOTNET.0"
 struct dotnet_embedding_api_group
@@ -203,6 +204,10 @@ struct dotnet_embedding_api_group
     _dotnet_runtime_callbacks_handle_threadstarted set_thread_started_callback;
     _dotnet_runtime_callbacks_handle_threadstopped set_thread_stopped_callback;
     _dotnet_runtime_callbacks_handle_gc_event set_gc_event_callback;
+
+    // Raw object access apis
+    _dotnet_rawobject_fieldid_voidptr_int32 read_field_on_rawobject;
+    _dotnet_rawobject_fieldid_voidptr_int32 write_field_on_rawobject;
 };
 
 #endif // __DOTNET_EMBEDDING_H__

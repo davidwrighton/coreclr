@@ -960,6 +960,22 @@ dotnet_error embeddingapi_read_field(dotnet_frame frame, dotnet_object obj, dotn
     return embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)pFD->GetInstanceAddress(objRef), (uint8_t*)pData, cbData);
 }
 
+void embeddingapi_read_field_on_rawobject(dotnet_rawobject obj, dotnet_fieldid field, void* pData, int32_t cbData)
+{
+    FieldDesc *pFD = (FieldDesc*)field;
+    Object *pObj = (Object*)obj;
+    PTR_BYTE pbOnHeap = pObj->GetData() + pFD->GetOffset_NoLogging();
+    memcpy(pData, pbOnHeap, cbData);
+}
+
+void embeddingapi_write_field_on_rawobject(dotnet_rawobject obj, dotnet_fieldid field, void* pData, int32_t cbData)
+{
+    FieldDesc *pFD = (FieldDesc*)field;
+    Object *pObj = (Object*)obj;
+    PTR_BYTE pbOnHeap = pObj->GetData() + pFD->GetOffset_NoLogging();
+    memcpy(pbOnHeap, pData, cbData);
+}
+
 dotnet_error embeddingapi_write_field(dotnet_object obj, dotnet_fieldid field, void*pData, int32_t cbData)
 {
     CONTRACTL
@@ -1234,6 +1250,9 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->set_thread_started_callback = embeddingapi_set_thread_started_callback;
         pApi->set_thread_stopped_callback = embeddingapi_set_thread_stopped_callback;
         pApi->set_gc_event_callback = embeddingapi_set_gc_event_callback;
+
+        pApi->read_field_on_rawobject = embeddingapi_read_field_on_rawobject;
+        pApi->write_field_on_rawobject = embeddingapi_write_field_on_rawobject;
         return S_OK;
     }
     else
