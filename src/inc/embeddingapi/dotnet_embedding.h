@@ -29,11 +29,25 @@ typedef _struct_dotnet_toggleref* dotnet_toggleref;
 struct _struct_dotnet_togglerefgroup {};
 typedef _struct_dotnet_togglerefgroup* dotnet_togglerefgroup;
 
+struct _dotnet_runtime_callbacks_handle {};
+typedef _dotnet_runtime_callbacks_handle* dotnet_runtime_callbacks_handle;
+
 typedef uint32_t dotnet_error;
 
 typedef int32_t (*dotnet_togglerefcallback)(dotnet_rawobject object);
 
 typedef int32_t (*dotnet_eagerfinalizeobjectcallback)(dotnet_rawobject object);
+
+typedef void (*dotnet_threadstarted)(void* callbacksptr, uintptr_t tid);
+typedef void (*dotnet_threadstopped)(void* callbacksptr, uintptr_t tid);
+
+enum dotnet_gc_events
+{
+	dotnet_gc_event_pre_stop_world = 6,
+	dotnet_gc_event_post_start_world = 9,
+};
+
+typedef void (*dotnet_gc_event)(void *callbacksptr, dotnet_gc_events gcevent, int generation, int32_t isSerial);
 
 enum dotnet_bindingflags
 {
@@ -111,6 +125,10 @@ typedef dotnet_error(*_dotnet_togglerefgroup_object_out_toggleref)(dotnet_toggle
 typedef dotnet_error(*_dotnet_togglerefgroup_toggleref)(dotnet_togglerefgroup, dotnet_toggleref);
 typedef dotnet_error(*_dotnet_frame_togglerefgroup_toggleref_out_object)(dotnet_frame, dotnet_togglerefgroup, dotnet_toggleref, dotnet_object*);
 typedef dotnet_error(*_dotnet_typeid_eagerfinalizeobjectcallback)(dotnet_typeid, dotnet_eagerfinalizeobjectcallback);
+typedef dotnet_error(*_dotnet_voidptr_out_runtime_callbacks_handle)(void*, dotnet_runtime_callbacks_handle*);
+typedef dotnet_error(*_dotnet_runtime_callbacks_handle_threadstarted)(dotnet_runtime_callbacks_handle, dotnet_threadstarted);
+typedef dotnet_error(*_dotnet_runtime_callbacks_handle_threadstopped)(dotnet_runtime_callbacks_handle, dotnet_threadstopped);
+typedef dotnet_error(*_dotnet_runtime_callbacks_handle_gc_event)(dotnet_runtime_callbacks_handle, dotnet_gc_event);
 
 #define DOTNET_V1_API_GROUP "DOTNET.0"
 struct dotnet_embedding_api_group
@@ -179,6 +197,12 @@ struct dotnet_embedding_api_group
 
     // Eager finalization
     _dotnet_typeid_eagerfinalizeobjectcallback register_eager_finalization_callback;
+
+    // profiler like api surface
+    _dotnet_voidptr_out_runtime_callbacks_handle alloc_callbacks;
+    _dotnet_runtime_callbacks_handle_threadstarted set_thread_started_callback;
+    _dotnet_runtime_callbacks_handle_threadstopped set_thread_stopped_callback;
+    _dotnet_runtime_callbacks_handle_gc_event set_gc_event_callback;
 };
 
 #endif // __DOTNET_EMBEDDING_H__

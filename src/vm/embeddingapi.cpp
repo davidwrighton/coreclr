@@ -7,6 +7,12 @@
 
 #include "common.h"
 
+void *embedding_api_callbacksptr = NULL;
+bool embedding_api_handle_allocated = false;
+dotnet_threadstarted embedding_api_thread_started = NULL;
+dotnet_threadstopped embedding_api_thread_stopped = NULL;
+dotnet_gc_event embedding_api_gc_event = NULL;
+
 // Utility functions
 dotnet_error embeddingapi_alloc(uint32_t cb, void ** bytes)
 {
@@ -1106,6 +1112,44 @@ dotnet_error embeddingapi_register_eager_finalization_callback(dotnet_typeid typ
     return S_OK;
 }
 
+dotnet_error embeddingapi_alloc_callbacks(void* callbacksptr, dotnet_runtime_callbacks_handle *callbacks_handle)
+{
+    if (embedding_api_handle_allocated)
+        return E_OUTOFMEMORY; // We don't actually support multiplexing at this time
+    
+    embedding_api_handle_allocated = true;
+    embedding_api_callbacksptr = callbacksptr;
+    *callbacks_handle = (dotnet_runtime_callbacks_handle)1;
+    return S_OK;
+}
+
+dotnet_error embeddingapi_set_thread_started_callback(dotnet_runtime_callbacks_handle callbackshandle, dotnet_threadstarted threadstarted)
+{
+    if (callbackshandle != (dotnet_runtime_callbacks_handle)1)
+        return E_INVALIDARG;
+    
+    embedding_api_thread_started = threadstarted;
+    return S_OK;
+}
+
+dotnet_error embeddingapi_set_thread_stopped_callback(dotnet_runtime_callbacks_handle callbackshandle, dotnet_threadstopped threadstopped)
+{
+    if (callbackshandle != (dotnet_runtime_callbacks_handle)1)
+        return E_INVALIDARG;
+    
+    embedding_api_thread_stopped = threadstopped;
+    return S_OK;
+}
+
+dotnet_error embeddingapi_set_gc_event_callback(dotnet_runtime_callbacks_handle callbackshandle, dotnet_gc_event gcevent)
+{
+    if (callbackshandle != (dotnet_runtime_callbacks_handle)1)
+        return E_INVALIDARG;
+    
+    embedding_api_gc_event = gcevent;
+    return S_OK;
+}
+
 // Setup embedding api infrastructure
 static void* GetApiFromManaged(EmbeddingApi::GetApiHelperEnum api)
 {
@@ -1147,6 +1191,7 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
 
         pApi->alloc = embeddingapi_alloc;
         pApi->free = embeddingapi_free;
+
         pApi->push_frame = embeddingapi_push_frame;
         pApi->push_frame_collect_on_return = embeddingapi_push_frame_collect_on_return;
         pApi->pop_frame = embeddingapi_pop_frame;
@@ -1162,7 +1207,6 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
 
         pApi->type_gettype = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::Type_GetType);
         pApi->type_getmethod = (_dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method)GetApiFromManaged(EmbeddingApi::Type_GetMethod);
-        pApi->string_alloc_utf8 = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::String_AllocUtf8);
 
         pApi->get_typeid = embeddingapi_get_typeid;
         pApi->get_methodid = embeddingapi_get_methodid;
@@ -1175,6 +1219,8 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         pApi->read_field_on_struct = embeddingapi_read_field_on_struct;
         pApi->write_field_on_struct = embeddingapi_write_field_on_struct;
 
+        pApi->string_alloc_utf8 = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::String_AllocUtf8);
+
         pApi->method_invoke = embeddingapi_method_invoke;
 
         pApi->toggleref_creategroup = embeddingapi_toggleref_creategroup;
@@ -1184,6 +1230,10 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
 
         pApi->register_eager_finalization_callback = embeddingapi_register_eager_finalization_callback;
 
+        pApi->alloc_callbacks = embeddingapi_alloc_callbacks;
+        pApi->set_thread_started_callback = embeddingapi_set_thread_started_callback;
+        pApi->set_thread_stopped_callback = embeddingapi_set_thread_stopped_callback;
+        pApi->set_gc_event_callback = embeddingapi_set_gc_event_callback;
         return S_OK;
     }
     else

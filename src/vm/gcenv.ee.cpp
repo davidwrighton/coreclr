@@ -22,6 +22,12 @@ void GCToEEInterface::SuspendEE(SUSPEND_REASON reason)
 
     g_pDebugInterface->SuspendForGarbageCollectionStarted();
 
+    if (embedding_api_gc_event != nullptr)
+    {
+        // Note, the api always passes 0 for generation and false for isSerial. This is incorrect
+        embedding_api_gc_event(embedding_api_callbacksptr, dotnet_gc_event_pre_stop_world, 0, false);
+    }
+
     ThreadSuspend::SuspendEE((ThreadSuspend::SUSPEND_REASON)reason);
 
     g_pDebugInterface->SuspendForGarbageCollectionCompleted();
@@ -34,6 +40,12 @@ void GCToEEInterface::RestartEE(bool bFinishedGC)
     g_pDebugInterface->ResumeForGarbageCollectionStarted();
 
     ThreadSuspend::RestartEE(bFinishedGC, TRUE);
+
+    if (embedding_api_gc_event != nullptr)
+    {
+        // Note, the api always passes 0 for generation and false for isSerial. This is incorrect
+        embedding_api_gc_event(embedding_api_callbacksptr, dotnet_gc_event_post_start_world, 0, false);
+    }
 }
 
 VOID GCToEEInterface::SyncBlockCacheWeakPtrScan(HANDLESCANPROC scanProc, uintptr_t lp1, uintptr_t lp2)

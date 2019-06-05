@@ -54,6 +54,8 @@
 #include "eventpipebuffermanager.h"
 #endif // FEATURE_PERFTRACING
 
+#include "embeddingapi_impl.h"
+
 uint64_t Thread::dead_threads_non_alloc_bytes = 0;
 
 SPTR_IMPL(ThreadStore, ThreadStore, s_pThreadStore);
@@ -811,6 +813,9 @@ Thread* SetupThread(BOOL fInternal)
 #ifdef FEATURE_EVENT_TRACE
     ETW::ThreadLog::FireThreadCreated(pThread);
 #endif // FEATURE_EVENT_TRACE
+
+    if (embedding_api_thread_started != NULL)
+        embedding_api_thread_started(embedding_api_callbacksptr, pThread->GetThreadId());
 
     return pThread;
 }
@@ -1794,6 +1799,9 @@ BOOL Thread::HasStarted(BOOL bRequiresTSL)
 #ifdef FEATURE_EVENT_TRACE
         ETW::ThreadLog::FireThreadCreated(this);
 #endif // FEATURE_EVENT_TRACE
+
+        if (embedding_api_thread_started != NULL)
+            embedding_api_thread_started(embedding_api_callbacksptr, GetThreadId());
     }
     EX_CATCH
     {
@@ -2870,6 +2878,9 @@ void Thread::OnThreadTerminate(BOOL holdingLock)
     Thread *pCurrentThread = GetThread();
     DWORD CurrentThreadID = pCurrentThread?pCurrentThread->GetThreadId():0;
     DWORD ThisThreadID = GetThreadId();
+
+    if (embedding_api_thread_stopped != NULL)
+        embedding_api_thread_stopped(embedding_api_callbacksptr, ThisThreadID);
 
 #ifdef FEATURE_COMINTEROP_APARTMENT_SUPPORT
     // If the currently running thread is the thread that died and it is an STA thread, then we

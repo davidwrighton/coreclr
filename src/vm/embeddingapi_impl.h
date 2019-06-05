@@ -69,5 +69,11 @@ public:
 
 dotnet_error embeddingapi_handle_alloc(dotnet_frame, OBJECTREF objRef, dotnet_object *handle);
 
+extern void *embedding_api_callbacksptr;
+extern bool embedding_api_handle_allocated;
+extern dotnet_threadstarted embedding_api_thread_started;
+extern dotnet_threadstopped embedding_api_thread_stopped;
+extern dotnet_gc_event embedding_api_gc_event;
+
 
 #endif // _EMBEDDINGAPI_IMPL_H
