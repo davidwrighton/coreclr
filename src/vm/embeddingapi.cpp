@@ -852,6 +852,9 @@ dotnet_error embeddingapi_impl_readmanagedmem(dotnet_frame frame, CorElementType
     if (CorTypeInfo::IsObjRef(et))
         th = TypeHandle(g_pObjectClass);
 
+    if (((int32_t)size) > cbDataUnmanaged)
+        return E_INVALIDARG;
+    
     memcpy(pUnmanagedData, pPointerToManagedMemory, size);
 
     if (th != NULL)
@@ -1205,54 +1208,88 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
         dotnet_embedding_api_group *pApi = (dotnet_embedding_api_group *)functions;
         memset(pApi, 0, sizeof(dotnet_embedding_api_group));
 
-        pApi->alloc = embeddingapi_alloc;
-        pApi->free = embeddingapi_free;
+#define SET_API(api) pApi->api = embeddingapi_ ## api
 
-        pApi->push_frame = embeddingapi_push_frame;
-        pApi->push_frame_collect_on_return = embeddingapi_push_frame_collect_on_return;
-        pApi->pop_frame = embeddingapi_pop_frame;
-        pApi->handle_free = embeddingapi_handle_free;
-        pApi->handle_pin = embeddingapi_handle_pin;
-        pApi->handle_unpin = embeddingapi_handle_unpin;
+        SET_API(alloc);
+        SET_API(free);
 
-        pApi->gchandle_alloc = embeddingapi_gchandle_alloc;
-        pApi->gchandle_alloc_weak = embeddingapi_gchandle_alloc_weak;
-        pApi->gchandle_alloc_weak_track_resurrection = embeddingapi_gchandle_alloc_weak_track_resurrection;
-        pApi->gchandle_free = embeddingapi_gchandle_free;
-        pApi->gchandle_get_target = embeddingapi_gchandle_get_target;
+        SET_API(push_frame);
+        SET_API(push_frame_collect_on_return);
+        SET_API(pop_frame);
+        SET_API(handle_free);
+        SET_API(handle_pin);
+        SET_API(handle_unpin);
 
-        pApi->type_gettype = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::Type_GetType);
-        pApi->type_getmethod = (_dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method)GetApiFromManaged(EmbeddingApi::Type_GetMethod);
+        SET_API(object_tostring);
+        SET_API(object_gettypeid);
+        SET_API(object_isinst);
+        SET_API(object_resolve_virtual);
+        SET_API(object_alloc);
 
-        pApi->get_typeid = embeddingapi_get_typeid;
-        pApi->get_methodid = embeddingapi_get_methodid;
-        pApi->get_fieldid = embeddingapi_get_fieldid;
+        SET_API(gchandle_alloc);
+        SET_API(gchandle_alloc_weak);
+        SET_API(gchandle_alloc_weak_track_resurrection);
+        SET_API(gchandle_free);
+        SET_API(gchandle_get_target);
 
-        pApi->read_field = embeddingapi_read_field;
-        pApi->write_field = embeddingapi_write_field;
-        pApi->read_static_field = embeddingapi_read_static_field;
-        pApi->write_static_field = embeddingapi_write_static_field;
-        pApi->read_field_on_struct = embeddingapi_read_field_on_struct;
-        pApi->write_field_on_struct = embeddingapi_write_field_on_struct;
+        SET_API(type_gettype);
+        SET_API(type_getmethod);
+        SET_API(type_getfield);
+        SET_API(type_get_element_type);
+        SET_API(type_getconstructor);
 
-        pApi->string_alloc_utf8 = (_dotnet_frame_utf8str_out_object)GetApiFromManaged(EmbeddingApi::String_AllocUtf8);
+        SET_API(get_typeid);
+        SET_API(get_methodid);
+        SET_API(get_fieldid);
+        SET_API(get_field_typeid);
+        SET_API(get_type_from_typeid);
+        SET_API(get_method_from_methodid);
+        SET_API(typeid_is_assignable_from);
+        SET_API(typeid_is_valuetype);
+        SET_API(typeid_field_size);
+        SET_API(typeid_field_alignment);
+        SET_API(typeid_is_enum);
+        SET_API(typeid_is_class);
+        SET_API(typeid_enum_underlying_type);
+        SET_API(typeid_is_byref);
+        SET_API(methodid_get_signature);
+        SET_API(methodsignature_free);
+        SET_API(methodsignature_get_argument_count);
+        SET_API(methodsignature_is_instance);
+        SET_API(methodsignature_get_return_typeid);
+        SET_API(methodsignature_get_nextarg_typeid);
+        SET_API(get_method_typeid);
 
-        pApi->method_invoke = embeddingapi_method_invoke;
+        SET_API(read_field);
+        SET_API(write_field);
+        SET_API(read_static_field);
+        SET_API(write_static_field);
+        SET_API(read_field_on_struct);
+        SET_API(write_field_on_struct);
 
-        pApi->toggleref_creategroup = embeddingapi_toggleref_creategroup;
-        pApi->toggleref_alloc = embeddingapi_toggleref_alloc;
-        pApi->toggleref_free = embeddingapi_toggleref_free;
-        pApi->toggleref_get_target = embeddingapi_toggleref_get_target;
+        SET_API(box);
+        SET_API(unbox);
 
-        pApi->register_eager_finalization_callback = embeddingapi_register_eager_finalization_callback;
+        SET_API(string_alloc_utf8);
+        SET_API(utf8_getstring);
 
-        pApi->alloc_callbacks = embeddingapi_alloc_callbacks;
-        pApi->set_thread_started_callback = embeddingapi_set_thread_started_callback;
-        pApi->set_thread_stopped_callback = embeddingapi_set_thread_stopped_callback;
-        pApi->set_gc_event_callback = embeddingapi_set_gc_event_callback;
+        SET_API(method_invoke);
 
-        pApi->read_field_on_rawobject = embeddingapi_read_field_on_rawobject;
-        pApi->write_field_on_rawobject = embeddingapi_write_field_on_rawobject;
+        SET_API(toggleref_creategroup);
+        SET_API(toggleref_destroygroup);
+        SET_API(toggleref_alloc);
+        SET_API(toggleref_free);
+        SET_API(toggleref_get_target);
+
+        SET_API(register_eager_finalization_callback);
+
+        SET_API(alloc_callbacks);
+        SET_API(set_thread_started_callback);
+        SET_API(set_thread_stopped_callback);
+        SET_API(set_gc_event_callback);
+
+        SET_API(read_field_on_rawobject);
+        SET_API(write_field_on_rawobject);
         return S_OK;
     }
     else
