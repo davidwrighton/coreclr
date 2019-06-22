@@ -149,8 +149,11 @@ typedef dotnet_error(*_dotnet_typeid_out_typeid)(dotnet_typeid, dotnet_typeid*);
 typedef dotnet_error(*_dotnet_methodid_out_methodsignature)(dotnet_methodid, dotnet_methodsignature*);
 typedef dotnet_error(*_dotnet_methodsignature)(dotnet_methodsignature);
 typedef dotnet_error(*_dotnet_methodsignature_out_int32)(dotnet_methodsignature, int32_t*);
-typedef dotnet_error(*_dotnet_methodsignature_int32_out_typeid)(dotnet_methodsignature, int32_t, dotnet_typeid*);
+typedef dotnet_error(*_dotnet_methodsignature_out_typeid)(dotnet_methodsignature, dotnet_typeid*);
 typedef dotnet_error(*_dotnet_methodid_out_typeid)(dotnet_methodid, dotnet_typeid*);
+typedef dotnet_error(*_dotnet_frame_object_utf8str_bindingflags_out_object)(dotnet_frame, dotnet_object, const char *, dotnet_bindingflags, dotnet_object*);
+typedef dotnet_error(*_dotnet_frame_methodid_typeid_out_object)(dotnet_frame,dotnet_methodid,dotnet_typeid,dotnet_object*);
+typedef dotnet_error(*_dotnet_frame_object_typeid_voidptr_int32)(dotnet_frame, dotnet_object, dotnet_typeid, void*,int32_t);
 
 #define DOTNET_V1_API_GROUP "DOTNET.0"
 typedef struct _dotnet_embedding_api_group
@@ -173,7 +176,7 @@ typedef struct _dotnet_embedding_api_group
 //    _dotnet_frame_object_out_object object_gettype;
     _dotnet_object_out_typeid object_gettypeid;
     _dotnet_object_typeid_int32 object_isinst;
-    _dotnet_object_methodid_out_methodid object_resolve_virtual;
+//1    _dotnet_object_methodid_out_methodid object_resolve_virtual;
     _dotnet_frame_typeid_out_object object_alloc;
  
     // GCHandle functions
@@ -190,7 +193,7 @@ typedef struct _dotnet_embedding_api_group
     // Reflection surface
     _dotnet_frame_utf8str_out_object type_gettype;
     _dotnet_frame_object_utf8str_bindingflags_objectptr_int32_out_method type_getmethod;
-    _dotnet_frame_object_utf8str_out_object type_getfield; // ADDED
+    _dotnet_frame_object_utf8str_bindingflags_out_object type_getfield; // ADDED
     _dotnet_frame_object_out_object type_get_element_type;
     _dotnet_frame_object_bindingflags_objectptr_int32_out_object type_getconstructor;
 
@@ -198,15 +201,14 @@ typedef struct _dotnet_embedding_api_group
     _dotnet_object_out_typeid get_typeid;
     _dotnet_object_out_methodid get_methodid;
     _dotnet_object_out_fieldid get_fieldid;
-    _dotnet_fieldid_out_typeid get_field_typeid;
+//1    _dotnet_fieldid_out_typeid get_field_typeid;
 //    _dotnet_frame_typeid_out_object get_typeid_lifetime_object;
 //    _dotnet_frame_methodid_out_object get_methodid_lifetime_object;
     _dotnet_frame_typeid_out_object get_type_from_typeid; // ADDED
-    _dotnet_frame_methodid_out_object get_method_from_methodid; // ADDED
+//1    _dotnet_frame_methodid_typeid_out_object get_method_from_methodid; // ADDED
     _dotnet_typeid_typeid_out_int32 typeid_is_assignable_from;
     _dotnet_typeid_out_int32 typeid_is_valuetype;
     _dotnet_typeid_out_int32 typeid_field_size;
-    _dotnet_typeid_out_int32 typeid_field_alignment;
     _dotnet_typeid_out_int32 typeid_is_enum;
     _dotnet_typeid_out_int32 typeid_is_class;
     _dotnet_typeid_out_typeid typeid_enum_underlying_type;
@@ -215,8 +217,8 @@ typedef struct _dotnet_embedding_api_group
     _dotnet_methodsignature methodsignature_free;
     _dotnet_methodsignature_out_int32 methodsignature_get_argument_count;
     _dotnet_methodsignature_out_int32 methodsignature_is_instance;
-    _dotnet_methodsignature_int32_out_typeid methodsignature_get_return_typeid;
-    _dotnet_methodsignature_int32_out_typeid methodsignature_get_nextarg_typeid;
+    _dotnet_methodsignature_out_typeid methodsignature_get_return_typeid;
+    _dotnet_methodsignature_out_typeid methodsignature_get_nextarg_typeid;
     _dotnet_methodid_out_typeid get_method_typeid;
 
     
@@ -228,7 +230,7 @@ typedef struct _dotnet_embedding_api_group
     _dotnet_voidptr_fieldid_voidptr_int32 read_field_on_struct;
     _dotnet_voidptr_fieldid_voidptr_int32 write_field_on_struct;
     _dotnet_frame_typeid_voidptr_int32_out_object box;
-    _dotnet_object_voidptr_int32 unbox;
+    _dotnet_frame_object_typeid_voidptr_int32 unbox;
 
     // String api
     _dotnet_frame_utf8str_out_object string_alloc_utf8;
@@ -244,7 +246,7 @@ typedef struct _dotnet_embedding_api_group
 
     // Toggle refs
     _dotnet_togglerefcallback_out_togglerefgroup toggleref_creategroup;
-    _dotnet_togglerefgroup toggleref_destroygroup;
+//1    _dotnet_togglerefgroup toggleref_destroygroup;
     _dotnet_togglerefgroup_object_out_toggleref toggleref_alloc;
     _dotnet_togglerefgroup_toggleref toggleref_free;
     _dotnet_frame_togglerefgroup_toggleref_out_object toggleref_get_target;

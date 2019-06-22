@@ -13,11 +13,50 @@ dotnet_threadstarted embedding_api_thread_started = NULL;
 dotnet_threadstopped embedding_api_thread_stopped = NULL;
 dotnet_gc_event embedding_api_gc_event = NULL;
 
+dotnet_error embeddingapi_impl_writemanagedmem(CorElementType et, TypeHandle th, uint8_t* pPointerToManagedMemory, uint8_t* pUnmanagedData, int32_t cbDataUnmanaged);
+dotnet_error embeddingapi_impl_readmanagedmem(dotnet_frame frame, CorElementType et, TypeHandle th, uint8_t* pPointerToManagedMemory, uint8_t* pUnmanagedData, int32_t cbDataUnmanaged);
+
+#define ENTER_EMBEDDING_API CONTRACTL \
+    { \
+        THROWS; \
+        GC_TRIGGERS; \
+        MODE_PREEMPTIVE; \
+        EE_THREAD_NOT_REQUIRED; \
+    } \
+    CONTRACTL_END; \
+    dotnet_error result = 0; \
+    BEGIN_GETTHREAD_ALLOWED; \
+    Thread *pThread = GetThreadNULLOk(); \
+    if (pThread == NULL) \
+        pThread = SetupThread(); \
+    EX_TRY \
+    { \
+
+
+#define END_EMBEDDING_API } EX_CATCH_HRESULT_NO_ERRORINFO (result); END_GETTHREAD_ALLOWED; return result
+
+enum class GetApiHelperEnum
+{
+    // Keep this in sync with the num in embeddingapi_impl.h
+    object_tostring,
+    type_gettype,
+    type_getmethod,
+    type_getfield,
+    type_get_element_type,
+    type_getconstructor,
+    string_alloc_utf8,
+    utf8_getstring,
+    get_method_from_methodid
+};
+
+static void* GetApiFromManaged(GetApiHelperEnum api);
+
+
 // Utility functions
 dotnet_error embeddingapi_alloc(uint32_t cb, void ** bytes)
 {
     STANDARD_VM_CONTRACT;
-    *bytes = (void*)new (nothrow)BYTE[cb];
+    *bytes = CoTaskMemAlloc(cb);
     if (*bytes == NULL)
         return E_OUTOFMEMORY;
     else
@@ -27,7 +66,7 @@ dotnet_error embeddingapi_alloc(uint32_t cb, void ** bytes)
 dotnet_error embeddingapi_free(void * bytes)
 {
     STANDARD_VM_CONTRACT;
-    delete[] bytes;
+    CoTaskMemFree(bytes);
     return S_OK;
 }
 
@@ -147,31 +186,14 @@ FrameForEmbeddingApi::~FrameForEmbeddingApi()
 
 dotnet_error embeddingapi_push_frame(dotnet_frame *frame)
 {
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_NOT_REQUIRED;
-    }
-    CONTRACTL_END;
-
-    dotnet_error result = 0;
-
-    BEGIN_GETTHREAD_ALLOWED;
-    Thread *pThread = GetThreadNULLOk();
-
-    if (pThread == NULL)
-        pThread = SetupThread();
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
     *frame = (dotnet_frame)new(nothrow) FrameForEmbeddingApi(pThread);
 
     result = (*frame) == NULL ? E_OUTOFMEMORY : S_OK;
 
-    END_GETTHREAD_ALLOWED;
-
-    return result;
+    END_EMBEDDING_API;
 }
 
 FCIMPL0(dotnet_frame, EmbeddingApi::nPushFrame)
@@ -193,18 +215,13 @@ dotnet_error embeddingapi_push_frame_collect_on_return(dotnet_frame *frame)
 
 dotnet_error embeddingapi_pop_frame(dotnet_frame frame)
 {
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
-    return actualFrame->Pop() ? S_OK : E_INVALIDARG;
+    result = actualFrame->Pop() ? S_OK : E_INVALIDARG;
+
+    END_EMBEDDING_API;
 }
 
 FCIMPL1(void, EmbeddingApi::nPopFrame, dotnet_frame frame)
@@ -222,22 +239,16 @@ FCIMPLEND;
 
 dotnet_error embeddingapi_handle_free(dotnet_frame frame, dotnet_object object)
 {
-    CONTRACTL
+    ENTER_EMBEDDING_API;
+
+    if (object != NULL)
     {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
+        GCX_COOP();
+        FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
+        actualFrame->FreeEntry(object);
     }
-    CONTRACTL_END;
 
-    if (object == NULL)
-        return S_OK;
-
-    GCX_COOP();
-    FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
-    actualFrame->FreeEntry(object);
-    return S_OK;
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_handle_alloc(dotnet_frame frame, OBJECTREF objRef, dotnet_object *handle)
@@ -295,382 +306,244 @@ FCIMPLEND;
 
 dotnet_error embeddingapi_handle_pin(dotnet_frame frame, dotnet_object object, dotnet_pin* pin, void**data)
 {
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     if (object == NULL)
-        return E_INVALIDARG;
-
-    GCX_COOP();
-    FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
-
-    OBJECTREF objRef = ObjectToOBJECTREF(*(Object **)object);
-    MethodTable *pMT = objRef->GetMethodTable();
-
-    if (!pMT->IsPinnable())
-    {
-        return E_INVALIDARG;
-    }
-
-    if (pMT->HasComponentSize())
-    {
-        *data = objRef->GetAddress() + ArrayBase::GetDataPtrOffset(pMT);
-    }
+        result = E_INVALIDARG;
     else
     {
-        *data = objRef->GetData();
+        GCX_COOP();
+        FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
+
+        OBJECTREF objRef = ObjectToOBJECTREF(*(Object **)object);
+        MethodTable *pMT = objRef->GetMethodTable();
+
+        if (!pMT->IsPinnable())
+        {
+            result = E_INVALIDARG;
+        }
+        else
+        {
+            if (pMT->HasComponentSize())
+            {
+                *data = objRef->GetAddress() + ArrayBase::GetDataPtrOffset(pMT);
+            }
+            else
+            {
+                *data = objRef->GetData();
+            }
+        }
+
+        if (actualFrame->AllocEntry(objRef->GetAddress() + 1, (void**)pin)) // The +1 provides information to the GC walker in the frame to indicate this is a pinned reference.
+            result = S_OK;
+        else
+            result = E_OUTOFMEMORY;
     }
 
-    if (actualFrame->AllocEntry(objRef->GetAddress() + 1, (void**)pin)) // The +1 provides information to the GC walker in the frame to indicate this is a pinned reference.
-        return S_OK;
-    else
-        return E_OUTOFMEMORY;
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_handle_unpin(dotnet_frame frame, dotnet_pin pin)
 {
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
     actualFrame->FreeEntry(pin);
-    return S_OK;
+
+    END_EMBEDDING_API;
+}
+
+// object api surface
+dotnet_error embeddingapi_object_gettypeid(dotnet_object obj, dotnet_typeid* type)
+{
+    ENTER_EMBEDDING_API;
+
+    GCX_COOP();
+    OBJECTREF objRef = embeddingapi_get_target(obj);
+    *type = (dotnet_typeid)objRef->GetTypeHandle().AsPtr();
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_object_isinst(dotnet_object obj, dotnet_typeid type, int32_t* isType)
+{
+    ENTER_EMBEDDING_API;
+
+    GCX_COOP();
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    OBJECTREF objRef = embeddingapi_get_target(obj);
+    *isType = (int32_t)ObjIsInstanceOf(OBJECTREFToObject(objRef), th, FALSE);
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_object_alloc(dotnet_frame frame, dotnet_typeid type, dotnet_object* object)
+{
+    ENTER_EMBEDDING_API;
+
+    GCX_COOP();
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    result = embeddingapi_handle_alloc(frame, AllocateObject(th.GetMethodTable()), object);
+
+    END_EMBEDDING_API;
 }
 
 // gchandle api surface
 dotnet_error embeddingapi_gchandle_alloc(dotnet_object obj, dotnet_gchandle *gchandle)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
+    *gchandle = NULL;
+    OBJECTREF objRef = embeddingapi_get_target(obj);
+    OBJECTHANDLE gch = CreateGlobalHandle(objRef);
+    *gchandle = (dotnet_gchandle)gch;
+    result = S_OK;
 
-    dotnet_error result;
-
-    EX_TRY
-    {
-        *gchandle = NULL;
-        OBJECTREF objRef = embeddingapi_get_target(obj);
-        OBJECTHANDLE gch = CreateGlobalHandle(objRef);
-        *gchandle = (dotnet_gchandle)gch;
-        result = S_OK;
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-    return result;
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_gchandle_alloc_weak(dotnet_object obj, dotnet_gchandle *gchandle)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    dotnet_error result;
-    EX_TRY
-    {
-        *gchandle = NULL;
-        OBJECTREF objRef = embeddingapi_get_target(obj);
-        OBJECTHANDLE gch = CreateGlobalShortWeakHandle(objRef);
-        *gchandle = (dotnet_gchandle)gch;
-        result = S_OK;
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-    return result;
+    *gchandle = NULL;
+    OBJECTREF objRef = embeddingapi_get_target(obj);
+    OBJECTHANDLE gch = CreateGlobalShortWeakHandle(objRef);
+    *gchandle = (dotnet_gchandle)gch;
+    result = S_OK;
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_gchandle_alloc_weak_track_resurrection(dotnet_object obj, dotnet_gchandle *gchandle)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    dotnet_error result;
-    EX_TRY
-    {
-        *gchandle = NULL;
-        OBJECTREF objRef = embeddingapi_get_target(obj);
-        OBJECTHANDLE gch = CreateGlobalLongWeakHandle(objRef);
-        *gchandle = (dotnet_gchandle)gch;
-        result = S_OK;
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-    return result;
+    *gchandle = NULL;
+    OBJECTREF objRef = embeddingapi_get_target(obj);
+    OBJECTHANDLE gch = CreateGlobalLongWeakHandle(objRef);
+    *gchandle = (dotnet_gchandle)gch;
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_gchandle_free(dotnet_gchandle gchandle)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    dotnet_error result;
-    EX_TRY
-    {
-        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
-        DestroyTypedHandle(gch);
-        result = S_OK;
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-    return result;
+    OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+    DestroyTypedHandle(gch);
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_gchandle_get_target(dotnet_frame frame, dotnet_gchandle gchandle, dotnet_object *object)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    dotnet_error result;
-    EX_TRY
-    {
-        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
-        OBJECTREF objRef = ObjectFromHandle(gch);
-        result = embeddingapi_handle_alloc(frame, objRef, object);
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-    return result;
+    OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+    OBJECTREF objRef = ObjectFromHandle(gch);
+    result = embeddingapi_handle_alloc(frame, objRef, object);
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_toggleref_creategroup(dotnet_togglerefcallback callback, dotnet_togglerefgroup *togglerefgroup)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
-    dotnet_error result;
-    EX_TRY
-    {
-        GCHandleUtilities::GetGCHandleManager()->CreateHandleStore((ref_counted_handle_callback_func*)callback);
-        result = S_OK;
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
+    GCHandleUtilities::GetGCHandleManager()->CreateHandleStore((ref_counted_handle_callback_func*)callback);
 
-    return result;
+    END_EMBEDDING_API;
 }
+
 
 dotnet_error embeddingapi_toggleref_alloc(dotnet_togglerefgroup togglerefgroup, dotnet_object obj, dotnet_toggleref *gchandle)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    *gchandle = NULL;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    dotnet_error result;
-    EX_TRY
-    {
-        *gchandle = NULL;
-        OBJECTREF objRef = embeddingapi_get_target(obj);
-        IGCHandleStore *store = (IGCHandleStore*)togglerefgroup;
-        OBJECTHANDLE gch = CreateRefcountedHandle(store, objRef);
-        *gchandle = (dotnet_toggleref)gch;
-        result = S_OK;
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
-
-    return result;
+    OBJECTREF objRef = embeddingapi_get_target(obj);
+    IGCHandleStore *store = (IGCHandleStore*)togglerefgroup;
+    OBJECTHANDLE gch = CreateRefcountedHandle(store, objRef);
+    *gchandle = (dotnet_toggleref)gch;
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_toggleref_free(dotnet_togglerefgroup togglerefgroup, dotnet_toggleref gchandle)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    dotnet_error result;
-    EX_TRY
-    {
-        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
-        DestroyTypedHandle(gch);
-        result = S_OK;
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
+    OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+    DestroyTypedHandle(gch);
 
-    return result;
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_toggleref_get_target(dotnet_frame frame, dotnet_togglerefgroup togglerefgroup, dotnet_toggleref gchandle, dotnet_object *object)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    dotnet_error result;
-    EX_TRY
-    {
-        OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
-        OBJECTREF objRef = ObjectFromHandle(gch);
-        result = embeddingapi_handle_alloc(frame, objRef, object);
-    }
-    EX_CATCH
-    {
-        result = E_OUTOFMEMORY;
-    }
-    EX_END_CATCH(SwallowAllExceptions);
+    OBJECTHANDLE gch = (OBJECTHANDLE)gchandle;
+    OBJECTREF objRef = ObjectFromHandle(gch);
+    result = embeddingapi_handle_alloc(frame, objRef, object);
 
-    return result;
+    END_EMBEDDING_API;
 }
 
 // Id access surface
 dotnet_error embeddingapi_get_methodid(dotnet_object method, dotnet_methodid* methodid)
 {
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
     if (method == NULL)
         return E_INVALIDARG;
-    
+
+    ENTER_EMBEDDING_API;
+
     GCX_COOP();
     REFLECTMETHODREF methodObj = (REFLECTMETHODREF)ObjectToOBJECTREF(*(Object**)method);
     MethodDesc *pMD = methodObj->GetMethod();
     *methodid = (dotnet_methodid)pMD;
-    return S_OK;
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_get_typeid(dotnet_object typeObject, dotnet_typeid* typeidVar)
 {
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
     if (typeObject == NULL)
         return E_INVALIDARG;
-    
+
+    ENTER_EMBEDDING_API;
+
     GCX_COOP();
     REFLECTCLASSBASEREF typeObj = (REFLECTCLASSBASEREF)ObjectToOBJECTREF(*(Object**)typeObject);
     TypeHandle th = typeObj->GetType();
     *typeidVar = (dotnet_typeid)th.AsPtr();
-    return S_OK;
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_get_fieldid(dotnet_object fieldObject, dotnet_fieldid* fieldidVar)
 {
-    CONTRACTL
-    {
-        NOTHROW;
-        GC_NOTRIGGER;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
     if (fieldObject == NULL)
         return E_INVALIDARG;
     
+    ENTER_EMBEDDING_API;
+
     GCX_COOP();
     REFLECTFIELDREF fieldObj = (REFLECTFIELDREF)ObjectToOBJECTREF(*(Object**)fieldObject);
     FieldDesc* fd = fieldObj->GetField();
@@ -678,20 +551,254 @@ dotnet_error embeddingapi_get_fieldid(dotnet_object fieldObject, dotnet_fieldid*
     fd->GetApproxFieldTypeHandleThrowing(); // CAN THROW, NEEDS PROTECTION
 
     *fieldidVar = (dotnet_fieldid)fd;
-    return S_OK;
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_get_type_from_typeid(dotnet_frame frame, dotnet_typeid type, dotnet_object *type_dotnet_obj)
+{
+    ENTER_EMBEDDING_API;
+
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    GCX_COOP();
+    OBJECTREF typeObject = th.GetManagedClassObject();
+    result = embeddingapi_handle_alloc(frame, typeObject, type_dotnet_obj);
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_assignable_from(dotnet_typeid typeA, dotnet_typeid typeB, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle thA = TypeHandle::FromPtr((void*)typeA);
+    TypeHandle thB = TypeHandle::FromPtr((void*)typeB);
+    *resultBool = thB.CanCastTo(thA) ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_valuetype(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    *resultBool = th.IsValueType() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_field_size(dotnet_typeid type, int32_t *size)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    *size = (int32_t)th.GetSize();
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_enum(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    *resultBool = th.IsEnum() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_class(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    *resultBool = !th.IsTypeDesc() && !th.GetMethodTable()->IsValueType() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_enum_underlying_type(dotnet_typeid type, dotnet_typeid *underlyingType)
+{
+    *underlyingType = 0;
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    if (!th.IsEnum())
+    {
+        result = E_INVALIDARG;
+    }
+    else
+    {
+        CorElementType underlyingTypeElementType = th.GetInternalCorElementType();
+        TypeHandle th = TypeHandle(MscorlibBinder::GetElementType(underlyingTypeElementType));
+        *underlyingType = (dotnet_typeid)th.AsPtr();
+    }
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_byref(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    *resultBool = th.IsByRef() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_methodid_get_signature(dotnet_methodid method, dotnet_methodsignature* sig)
+{
+    ENTER_EMBEDDING_API;
+    MethodDesc *pMD = (MethodDesc*)method;
+    MetaSig *pSig = new(nothrow)MetaSig(pMD);
+    if (pSig == NULL)
+    {
+        result = E_OUTOFMEMORY;
+        *sig = 0;
+    }
+    else
+    {
+        *sig = (dotnet_methodsignature)pSig;
+        result = S_OK;
+    }
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_methodsignature_free(dotnet_methodsignature sig)
+{
+    ENTER_EMBEDDING_API;
+    delete (MetaSig*)sig;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_methodsignature_get_argument_count(dotnet_methodsignature sig, int32_t *argCount)
+{
+    ENTER_EMBEDDING_API;
+    MetaSig *pSig = (MetaSig*)sig;
+    *argCount = (int32_t)pSig->NumFixedArgs();
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_methodsignature_is_instance(dotnet_methodsignature sig, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    MetaSig *pSig = (MetaSig*)sig;
+    *resultBool = pSig->HasThis() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_methodsignature_get_nextarg_typeid(dotnet_methodsignature sig, dotnet_typeid *type)
+{
+    ENTER_EMBEDDING_API;
+    MetaSig *pSig = (MetaSig*)sig;
+    if (pSig->NextArg() == ELEMENT_TYPE_END)
+    {
+        result = E_INVALIDARG;
+    }
+    else
+    {
+        TypeHandle th = pSig->GetLastTypeHandleThrowing();
+        *type = (dotnet_typeid)th.AsPtr();
+    }
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_methodsignature_get_return_typeid(dotnet_methodsignature sig, dotnet_typeid *type)
+{
+    ENTER_EMBEDDING_API;
+    MetaSig *pSig = (MetaSig*)sig;
+    TypeHandle th = pSig->GetRetTypeHandleThrowing();
+    *type = (dotnet_typeid)th.AsPtr();
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_box(dotnet_frame frame, dotnet_typeid type, void* pData, int32_t cbData, dotnet_object *boxedObject)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    if (!th.IsValueType())
+    {
+        result = E_INVALIDARG;
+    }
+    else if (th.IsByRefLike())
+    {
+        result = E_INVALIDARG;
+    }
+    else
+    {
+        if (Nullable::IsNullableType(th))
+        {
+            MethodTable *nullableMT = th.GetMethodTable();
+            MethodTable *argMT = nullableMT->GetInstantiation()[0].GetMethodTable();
+            CorElementType et = argMT->GetInternalCorElementType();
+
+            GCX_COOP();
+            OBJECTREF nonNullableObj = argMT->Allocate();
+            Nullable* src = (Nullable*)pData;
+            result = embeddingapi_impl_writemanagedmem(et, TypeHandle(argMT), (uint8_t*)nonNullableObj->UnBox(), (uint8_t*)src->ValueAddr(nullableMT), argMT->GetNumInstanceFieldBytes());
+        }
+        else
+        {
+            CorElementType et = th.GetInternalCorElementType();
+            GCX_COOP();
+            OBJECTREF obj = AllocateObject(th.GetMethodTable());
+            result = embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)obj->UnBox(), (uint8_t*)pData, th.GetSize());
+        }
+    }
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_unbox(dotnet_frame frame, dotnet_object boxedObject, dotnet_typeid type, void* pData, int32_t cbData)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    if (!th.IsValueType())
+    {
+        result = E_INVALIDARG;
+    }
+    else if (th.IsByRefLike())
+    {
+        result = E_INVALIDARG;
+    }
+    else
+    {
+        bool done = false;
+        GCX_COOP();
+        if (Nullable::IsNullableType(th))
+        {
+            if (boxedObject == NULL)
+            {
+                memset(pData, 0, cbData);
+                done = true;
+            }
+            else
+            {
+                CLR_BOOL *pBool = ((Nullable*)pData)->HasValueAddr(th.GetMethodTable());
+                *pBool = true;
+                uint8_t* pValueData = (uint8_t*)((Nullable*)pData)->ValueAddr(th.GetMethodTable());
+                cbData -= (int32_t)(pValueData - (uint8_t*)pData);
+                pData = pValueData;
+                th = th.GetMethodTable()->GetInstantiation()[0];
+            }
+        }
+        if (!done)
+        {
+            TypeHandle thBoxedObject;
+            {
+                OBJECTREF boxedObjRef = embeddingapi_get_target(boxedObject);
+                thBoxedObject = boxedObjRef->GetTypeHandle();
+            }
+            if (!thBoxedObject.IsEquivalentTo(th))
+            {
+                result = E_INVALIDARG;
+            }
+            else
+            {
+                CorElementType et = thBoxedObject.GetInternalCorElementType();
+                OBJECTREF boxedObjRef = embeddingapi_get_target(boxedObject);
+                result = embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)boxedObjRef->UnBox(), (uint8_t*)pData, cbData);
+            }
+        }
+    }
+
+    END_EMBEDDING_API;
 }
 
 // Method invoke implementation
 dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
@@ -699,7 +806,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
 
     MethodDescCallSite methodToCall((MethodDesc*)methodId);
 
-    for (int i = 0; i < (countOfArguments - 1); i++)
+    for (int i = 0; i < (countOfArguments - 1) && (result == S_OK); i++)
     {
         dotnet_invokeargument invokeArg = arguments[i+1];
         TypeHandle argumentTypeHandle = TypeHandle::FromPtr((void*)invokeArg.type);
@@ -736,7 +843,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
             else
             {
                 // Case 4
-                return E_FAIL;
+                result = E_FAIL;
             }
         }
         else if (etCallingConvention == ELEMENT_TYPE_BYREF)
@@ -747,7 +854,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
             if (CorTypeInfo::IsObjRef(etCallingConvention))
             {
                 // Case 6.
-                return E_FAIL;
+                result = E_FAIL;
             }
             if (!argumentTypeHandle.GetMethodTable()->ContainsPointers())
             {
@@ -757,7 +864,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
             else
             {
                 // Case 8
-                return E_FAIL;
+                result = E_FAIL;
             }
         }
         else
@@ -768,28 +875,33 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
         }
     }
 
-    ARG_SLOT returnValue = methodToCall.Call_RetArgSlot(pArgSlots);
-
-    // There are a variety of return paths...
-    // Handle two of them
-
-    TypeHandle returnTypeHandle = TypeHandle::FromPtr((void*)arguments[0].type);
-    CorElementType etReturnType = returnTypeHandle.GetInternalCorElementType();
-
-    if (CorTypeInfo::IsObjRef(etReturnType))
+    if (result == S_OK)
     {
-        return embeddingapi_handle_alloc(frame, ArgSlotToObj(returnValue), (dotnet_object*)arguments[0].data);
+        ARG_SLOT returnValue = methodToCall.Call_RetArgSlot(pArgSlots);
+
+        // There are a variety of return paths...
+        // Handle two of them
+
+        TypeHandle returnTypeHandle = TypeHandle::FromPtr((void*)arguments[0].type);
+        CorElementType etReturnType = returnTypeHandle.GetInternalCorElementType();
+
+        if (CorTypeInfo::IsObjRef(etReturnType))
+        {
+            result = embeddingapi_handle_alloc(frame, ArgSlotToObj(returnValue), (dotnet_object*)arguments[0].data);
+        }
+        else if (etReturnType == ELEMENT_TYPE_VALUETYPE)
+        {
+            result = E_FAIL;
+        }
+        else
+        {
+            // Copy argslot contents back into data
+            memcpy(arguments[0].data, &returnValue, returnTypeHandle.GetSize());
+            result = S_OK;
+        }
     }
-    else if (etReturnType == ELEMENT_TYPE_VALUETYPE)
-    {
-        return E_FAIL;
-    }
-    else
-    {
-        // Copy argslot contents back into data
-        memcpy(arguments[0].data, &returnValue, returnTypeHandle.GetSize());
-        return S_OK;
-    }
+
+    END_EMBEDDING_API;
 }
 
 template <class lambda_t>
@@ -933,24 +1045,14 @@ dotnet_error embeddingapi_impl_writemanagedmem(CorElementType et, TypeHandle th,
 
 dotnet_error embeddingapi_read_field(dotnet_frame frame, dotnet_object obj, dotnet_fieldid field, void*pData, int32_t cbData)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
     FieldDesc *pFD = (FieldDesc*)field;
 
     if (field == NULL)
         return E_INVALIDARG;
 
-    CorElementType et = pFD->GetFieldType();
+    ENTER_EMBEDDING_API;
 
-    if (pFD->IsStatic())
-        return E_INVALIDARG;
+    CorElementType et = pFD->GetFieldType();
 
     TypeHandle th = NULL;
     if (et == ELEMENT_TYPE_VALUETYPE)
@@ -960,11 +1062,13 @@ dotnet_error embeddingapi_read_field(dotnet_frame frame, dotnet_object obj, dotn
 
     OBJECTREF objRef = embeddingapi_get_target(obj);
 
-    return embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)pFD->GetInstanceAddress(objRef), (uint8_t*)pData, cbData);
+    result = embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)pFD->GetInstanceAddress(objRef), (uint8_t*)pData, cbData);
+    END_EMBEDDING_API;
 }
 
 void embeddingapi_read_field_on_rawobject(dotnet_rawobject obj, dotnet_fieldid field, void* pData, int32_t cbData)
 {
+    // This api does no error checking, or anything, and are not protected by the ENTER_EMBEDDING_API macro
     FieldDesc *pFD = (FieldDesc*)field;
     Object *pObj = (Object*)obj;
     PTR_BYTE pbOnHeap = pObj->GetData() + pFD->GetOffset_NoLogging();
@@ -973,6 +1077,7 @@ void embeddingapi_read_field_on_rawobject(dotnet_rawobject obj, dotnet_fieldid f
 
 void embeddingapi_write_field_on_rawobject(dotnet_rawobject obj, dotnet_fieldid field, void* pData, int32_t cbData)
 {
+    // This api does no error checking, or anything, and are not protected by the ENTER_EMBEDDING_API macro
     FieldDesc *pFD = (FieldDesc*)field;
     Object *pObj = (Object*)obj;
     PTR_BYTE pbOnHeap = pObj->GetData() + pFD->GetOffset_NoLogging();
@@ -981,24 +1086,14 @@ void embeddingapi_write_field_on_rawobject(dotnet_rawobject obj, dotnet_fieldid 
 
 dotnet_error embeddingapi_write_field(dotnet_object obj, dotnet_fieldid field, void*pData, int32_t cbData)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
     FieldDesc *pFD = (FieldDesc*)field;
 
     if (field == NULL)
         return E_INVALIDARG;
 
-    CorElementType et = pFD->GetFieldType();
+    ENTER_EMBEDDING_API;
 
-    if (pFD->IsStatic())
-        return E_INVALIDARG;
+    CorElementType et = pFD->GetFieldType();
 
     TypeHandle th = NULL;
     if (et == ELEMENT_TYPE_VALUETYPE)
@@ -1008,29 +1103,21 @@ dotnet_error embeddingapi_write_field(dotnet_object obj, dotnet_fieldid field, v
 
     OBJECTREF objRef = embeddingapi_get_target(obj);
 
-    return embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)pFD->GetInstanceAddress(objRef), (uint8_t*)pData, cbData);
+    result = embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)pFD->GetInstanceAddress(objRef), (uint8_t*)pData, cbData);
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_read_static_field(dotnet_frame frame, dotnet_fieldid field, void*pData, int32_t cbData)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
     FieldDesc *pFD = (FieldDesc*)field;
 
     if (field == NULL)
         return E_INVALIDARG;
 
-    CorElementType et = pFD->GetFieldType();
+    ENTER_EMBEDDING_API;
 
-    if (!pFD->IsStatic())
-        return E_INVALIDARG;
+    CorElementType et = pFD->GetFieldType();
 
     TypeHandle th = NULL;
     if (et == ELEMENT_TYPE_VALUETYPE)
@@ -1040,29 +1127,21 @@ dotnet_error embeddingapi_read_static_field(dotnet_frame frame, dotnet_fieldid f
 
     pFD->GetApproxEnclosingMethodTable_NoLogging()->CheckRunClassInitThrowing();
 
-    return embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
+    result = embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_write_static_field(dotnet_fieldid field, void*pData, int32_t cbData)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_REQUIRED;
-    }
-    CONTRACTL_END;
-
     FieldDesc *pFD = (FieldDesc*)field;
 
     if (field == NULL)
         return E_INVALIDARG;
 
-    CorElementType et = pFD->GetFieldType();
+    ENTER_EMBEDDING_API;
 
-    if (!pFD->IsStatic())
-        return E_INVALIDARG;
+    CorElementType et = pFD->GetFieldType();
 
     TypeHandle th = NULL;
     if (et == ELEMENT_TYPE_VALUETYPE)
@@ -1072,7 +1151,8 @@ dotnet_error embeddingapi_write_static_field(dotnet_fieldid field, void*pData, i
 
     pFD->GetApproxEnclosingMethodTable_NoLogging()->CheckRunClassInitThrowing();
 
-    return embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
+    result = embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)pFD->GetCurrentStaticAddress(), (uint8_t*)pData, cbData);
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_read_field_on_struct(void *structure, dotnet_fieldid field, void *data, int32_t cbData)
@@ -1082,17 +1162,16 @@ dotnet_error embeddingapi_read_field_on_struct(void *structure, dotnet_fieldid f
     if (field == NULL)
         return E_INVALIDARG;
     
-    if (!pFD->GetApproxEnclosingMethodTable_NoLogging()->IsValueType())
-        return E_INVALIDARG;
+    ENTER_EMBEDDING_API;
 
     DWORD offset = pFD->GetOffset();
     UINT size = pFD->GetSize();
 
     if (cbData < (int32_t)size)
-        return E_INVALIDARG;
-
-    memcpy(data, ((uint8_t*)structure) + offset, size);
-    return S_OK;
+        result = E_INVALIDARG;
+    else
+        memcpy(data, ((uint8_t*)structure) + offset, size);
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_write_field_on_struct(void *structure, dotnet_fieldid field, void *data, int32_t cbData)
@@ -1101,34 +1180,87 @@ dotnet_error embeddingapi_write_field_on_struct(void *structure, dotnet_fieldid 
 
     if (field == NULL)
         return E_INVALIDARG;
-    
-    if (!pFD->GetApproxEnclosingMethodTable_NoLogging()->IsValueType())
-        return E_INVALIDARG;
+
+    ENTER_EMBEDDING_API;
 
     DWORD offset = pFD->GetOffset();
     UINT size = pFD->GetSize();
 
     if (cbData < (int32_t)size)
+        result = E_INVALIDARG;
+    else
+        memcpy(((uint8_t*)structure) + offset, data, size);
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_array_read_element(dotnet_frame frame, dotnet_object array, int32_t index, void* pData, int32_t cbData)
+{
+    if (array == NULL)
         return E_INVALIDARG;
 
-    memcpy(((uint8_t*)structure) + offset, data, size);
-    return S_OK;
+    if (index < 0)
+        return E_INVALIDARG;
+
+    ENTER_EMBEDDING_API;
+
+    GCX_COOP();
+
+    ARRAYBASEREF objRef = (ARRAYBASEREF)embeddingapi_get_target(array);
+    CorElementType et = objRef->GetArrayElementType(); 
+    TypeHandle th = NULL;
+    if (et == ELEMENT_TYPE_VALUETYPE)
+        th = objRef->GetArrayElementTypeHandle();
+
+    result = embeddingapi_impl_readmanagedmem(frame, et, th, (uint8_t*)objRef->GetDataPtr() + (index * cbData), (uint8_t*)pData, cbData);
+
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_array_write_element(dotnet_object array, int32_t index, void* pData, int32_t cbData)
+{
+    if (array == NULL)
+        return E_INVALIDARG;
+
+    if (index < 0)
+        return E_INVALIDARG;
+
+    ENTER_EMBEDDING_API;
+
+    GCX_COOP();
+
+    ARRAYBASEREF objRef = (ARRAYBASEREF)embeddingapi_get_target(array);
+    CorElementType et = objRef->GetArrayElementType(); 
+    TypeHandle th = NULL;
+    if (et == ELEMENT_TYPE_VALUETYPE)
+        th = objRef->GetArrayElementTypeHandle();
+
+    result = embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)objRef->GetDataPtr() + (index * cbData), (uint8_t*)pData, cbData);
+
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_register_eager_finalization_callback(dotnet_typeid type, dotnet_eagerfinalizeobjectcallback finalizeCallback)
 {
+    ENTER_EMBEDDING_API;
+
     TypeHandle th = TypeHandle::FromPtr((void*)type);
     if (th.IsTypeDesc())
-        return E_INVALIDARG;
-    
-    MethodTable* pMT = th.AsMethodTable();
+        result = E_INVALIDARG;
+    else
+    {
+        MethodTable* pMT = th.AsMethodTable();
 
-    if (!pMT->IsEagerFinalized())
-        return E_INVALIDARG;
+        if (!pMT->IsEagerFinalized())
+        {
+            result = E_INVALIDARG;
+        }
+        else
+        {
+            SetEagerFinalizer(pMT, (EagerFinalizer)finalizeCallback);
+        }
+    }
 
-    SetEagerFinalizer(pMT, (EagerFinalizer)finalizeCallback);
-
-    return S_OK;
+    END_EMBEDDING_API;
 }
 
 dotnet_error embeddingapi_alloc_callbacks(void* callbacksptr, dotnet_runtime_callbacks_handle *callbacks_handle)
@@ -1170,7 +1302,7 @@ dotnet_error embeddingapi_set_gc_event_callback(dotnet_runtime_callbacks_handle 
 }
 
 // Setup embedding api infrastructure
-static void* GetApiFromManaged(EmbeddingApi::GetApiHelperEnum api)
+static void* GetApiFromManaged(GetApiHelperEnum api)
 {
     MethodDescCallSite getApi(METHOD__EMBEDDING_API__GET_API);
     ARG_SLOT args[1] = { (ARG_SLOT)api };
@@ -1179,122 +1311,117 @@ static void* GetApiFromManaged(EmbeddingApi::GetApiHelperEnum api)
 
 dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int functionsBufferSizeInBytes)
 {
-    CONTRACTL
-    {
-        THROWS;
-        GC_TRIGGERS;
-        MODE_PREEMPTIVE;
-        EE_THREAD_NOT_REQUIRED;
-    }
-    CONTRACTL_END;
+    ENTER_EMBEDDING_API;
 
     if (apiname == NULL)
-        return E_INVALIDARG;
-
-    
-    BEGIN_GETTHREAD_ALLOWED;
-    Thread *pThread = GetThreadNULLOk();
-
-    if (pThread == NULL)
-        pThread = SetupThread();
-
-    GCX_COOP();
-
-    if (strcmp(apiname, DOTNET_V1_API_GROUP) == 0)
-    {
-        if (sizeof(dotnet_embedding_api_group) > functionsBufferSizeInBytes)
-            return E_INVALIDARG;
-        
-        dotnet_embedding_api_group *pApi = (dotnet_embedding_api_group *)functions;
-        memset(pApi, 0, sizeof(dotnet_embedding_api_group));
-
-#define SET_API(api) pApi->api = embeddingapi_ ## api
-
-        SET_API(alloc);
-        SET_API(free);
-
-        SET_API(push_frame);
-        SET_API(push_frame_collect_on_return);
-        SET_API(pop_frame);
-        SET_API(handle_free);
-        SET_API(handle_pin);
-        SET_API(handle_unpin);
-
-        SET_API(object_tostring);
-        SET_API(object_gettypeid);
-        SET_API(object_isinst);
-        SET_API(object_resolve_virtual);
-        SET_API(object_alloc);
-
-        SET_API(gchandle_alloc);
-        SET_API(gchandle_alloc_weak);
-        SET_API(gchandle_alloc_weak_track_resurrection);
-        SET_API(gchandle_free);
-        SET_API(gchandle_get_target);
-
-        SET_API(type_gettype);
-        SET_API(type_getmethod);
-        SET_API(type_getfield);
-        SET_API(type_get_element_type);
-        SET_API(type_getconstructor);
-
-        SET_API(get_typeid);
-        SET_API(get_methodid);
-        SET_API(get_fieldid);
-        SET_API(get_field_typeid);
-        SET_API(get_type_from_typeid);
-        SET_API(get_method_from_methodid);
-        SET_API(typeid_is_assignable_from);
-        SET_API(typeid_is_valuetype);
-        SET_API(typeid_field_size);
-        SET_API(typeid_field_alignment);
-        SET_API(typeid_is_enum);
-        SET_API(typeid_is_class);
-        SET_API(typeid_enum_underlying_type);
-        SET_API(typeid_is_byref);
-        SET_API(methodid_get_signature);
-        SET_API(methodsignature_free);
-        SET_API(methodsignature_get_argument_count);
-        SET_API(methodsignature_is_instance);
-        SET_API(methodsignature_get_return_typeid);
-        SET_API(methodsignature_get_nextarg_typeid);
-        SET_API(get_method_typeid);
-
-        SET_API(read_field);
-        SET_API(write_field);
-        SET_API(read_static_field);
-        SET_API(write_static_field);
-        SET_API(read_field_on_struct);
-        SET_API(write_field_on_struct);
-
-        SET_API(box);
-        SET_API(unbox);
-
-        SET_API(string_alloc_utf8);
-        SET_API(utf8_getstring);
-
-        SET_API(method_invoke);
-
-        SET_API(toggleref_creategroup);
-        SET_API(toggleref_destroygroup);
-        SET_API(toggleref_alloc);
-        SET_API(toggleref_free);
-        SET_API(toggleref_get_target);
-
-        SET_API(register_eager_finalization_callback);
-
-        SET_API(alloc_callbacks);
-        SET_API(set_thread_started_callback);
-        SET_API(set_thread_stopped_callback);
-        SET_API(set_gc_event_callback);
-
-        SET_API(read_field_on_rawobject);
-        SET_API(write_field_on_rawobject);
-        return S_OK;
-    }
+        result = E_INVALIDARG;
     else
     {
-        return E_INVALIDARG;
+        GCX_COOP();
+
+        if (strcmp(apiname, DOTNET_V1_API_GROUP) == 0)
+        {
+            if (sizeof(dotnet_embedding_api_group) > functionsBufferSizeInBytes)
+            {
+                result = E_INVALIDARG;
+            }
+            else
+            {
+                dotnet_embedding_api_group *pApi = (dotnet_embedding_api_group *)functions;
+                memset(pApi, 0, sizeof(dotnet_embedding_api_group));
+
+#define SET_API(api) pApi->api = embeddingapi_ ## api
+#define MANAGED_API(api) pApi->api = (decltype(pApi->api))GetApiFromManaged(GetApiHelperEnum::api)
+
+                SET_API(alloc);
+                SET_API(free);
+
+                SET_API(push_frame);
+                SET_API(push_frame_collect_on_return);
+                SET_API(pop_frame);
+                SET_API(handle_free);
+                SET_API(handle_pin);
+                SET_API(handle_unpin);
+
+                MANAGED_API(object_tostring);
+                SET_API(object_gettypeid);
+                SET_API(object_isinst);
+//                SET_API(object_resolve_virtual);
+                SET_API(object_alloc);
+
+                SET_API(gchandle_alloc);
+                SET_API(gchandle_alloc_weak);
+                SET_API(gchandle_alloc_weak_track_resurrection);
+                SET_API(gchandle_free);
+                SET_API(gchandle_get_target);
+
+                MANAGED_API(type_gettype);
+                MANAGED_API(type_getmethod);
+                MANAGED_API(type_getfield);
+                MANAGED_API(type_get_element_type);
+                MANAGED_API(type_getconstructor);
+
+                SET_API(get_typeid);
+                SET_API(get_methodid);
+                SET_API(get_fieldid);
+//                SET_API(get_field_typeid);
+                SET_API(get_type_from_typeid);
+                MANAGED_API(get_method_from_methodid);
+                SET_API(typeid_is_assignable_from);
+                SET_API(typeid_is_valuetype);
+                SET_API(typeid_field_size);
+                SET_API(typeid_is_enum);
+                SET_API(typeid_is_class);
+                SET_API(typeid_enum_underlying_type);
+                SET_API(typeid_is_byref);
+                SET_API(methodid_get_signature);
+                SET_API(methodsignature_free);
+                SET_API(methodsignature_get_argument_count);
+                SET_API(methodsignature_is_instance);
+                SET_API(methodsignature_get_return_typeid);
+                SET_API(methodsignature_get_nextarg_typeid);
+//                SET_API(get_method_typeid);
+
+                SET_API(read_field);
+                SET_API(write_field);
+                SET_API(read_static_field);
+                SET_API(write_static_field);
+                SET_API(read_field_on_struct);
+                SET_API(write_field_on_struct);
+
+                SET_API(box);
+                SET_API(unbox);
+
+                MANAGED_API(string_alloc_utf8);
+                MANAGED_API(utf8_getstring);
+
+                SET_API(method_invoke);
+
+                SET_API(array_read_element);
+                SET_API(array_write_element);
+
+                SET_API(toggleref_creategroup);
+//                SET_API(toggleref_destroygroup);
+                SET_API(toggleref_alloc);
+                SET_API(toggleref_free);
+                SET_API(toggleref_get_target);
+
+                SET_API(register_eager_finalization_callback);
+
+                SET_API(alloc_callbacks);
+                SET_API(set_thread_started_callback);
+                SET_API(set_thread_stopped_callback);
+                SET_API(set_gc_event_callback);
+
+                SET_API(read_field_on_rawobject);
+                SET_API(write_field_on_rawobject);
+                result = S_OK;
+            }
+        }
+        else
+        {
+            result = E_INVALIDARG;
+        }
     }
-    END_GETTHREAD_ALLOWED;
+    END_EMBEDDING_API;
 }

@@ -2850,12 +2850,12 @@ public:
         return nullable->ValueAddr(nullableMT);
     }
     
+    void* ValueAddr(MethodTable* nullableMT);
+    CLR_BOOL* HasValueAddr(MethodTable* nullableMT);
 private:
     static BOOL IsNullableForTypeHelper(MethodTable* nullableMT, MethodTable* paramMT);
     static BOOL IsNullableForTypeHelperNoGC(MethodTable* nullableMT, MethodTable* paramMT);
 
-    CLR_BOOL* HasValueAddr(MethodTable* nullableMT);
-    void* ValueAddr(MethodTable* nullableMT);
 };
 
 #ifdef USE_CHECKED_OBJECTREFS
