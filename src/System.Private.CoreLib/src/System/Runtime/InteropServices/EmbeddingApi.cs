@@ -26,13 +26,13 @@ namespace System.Runtime.InteropServices
         private static extern IntPtr nPushFrame();
 
 
-        private delegate int Object_ToStringDelegate(IntPtr frame, IntPtr objectHandle, IntPtr *stringHandle)
-        int Object_ToString(IntPtr frame, IntPtr objectHandle, IntPtr* stringHandle)
+        private delegate int Object_ToStringDelegate(IntPtr frame, IntPtr objectHandle, IntPtr *stringHandle);
+        private static int Object_ToString(IntPtr frame, IntPtr objectHandle, IntPtr* stringHandle)
         {
             try
             {
                 object? o = nGetTarget(objectHandle);
-                string? s = o.ToString();
+                string? s = o!.ToString();
                 *stringHandle = nAllocHandle(frame, s);
                 return 0;
             }
@@ -92,7 +92,7 @@ namespace System.Runtime.InteropServices
         }
 
         private delegate int Type_GetFieldDelegate(IntPtr frame, IntPtr typeHandle, IntPtr fieldNameUtf8, BindingFlags flags, IntPtr *fieldHandle);
-        int Type_GetField(IntPtr frame, IntPtr typeHandle, IntPtr fieldNameUtf8, BindingFlags flags, IntPtr *fieldHandle)
+        private static int Type_GetField(IntPtr frame, IntPtr typeHandle, IntPtr fieldNameUtf8, BindingFlags flags, IntPtr *fieldHandle)
         {
             try
             {
@@ -104,7 +104,7 @@ namespace System.Runtime.InteropServices
                 if (fieldName == null)
                     throw new ArgumentNullException("fieldName");
 
-                FieldInfo? field = type.GetField(fielddName, flags);
+                FieldInfo? field = type.GetField(fieldName, flags);
                 *fieldHandle = nAllocHandle(frame, field);
                 return 0;
             }
@@ -115,8 +115,8 @@ namespace System.Runtime.InteropServices
         }
 
 
-        private delegate int Type_GetElementTypeDelegate(IntPtr frame, IntPtr typeHandle, IntPtr fieldNameUtf8, BindingFlags flags, IntPtr* fieldHandle);
-        int Type_GetElementType(IntPtr frame, IntPtr typeHandle, IntPtr* elementTypeHandle)
+        private delegate int Type_GetElementTypeDelegate(IntPtr frame, IntPtr typeHandle, IntPtr* elementTypeHandle);
+        private static int Type_GetElementType(IntPtr frame, IntPtr typeHandle, IntPtr* elementTypeHandle)
         {
             try
             {
@@ -182,11 +182,11 @@ namespace System.Runtime.InteropServices
         {
             try
             {
-                String? str = (String?)nGetTarget(typeHandle);
+                String? str = (String?)nGetTarget(stringHandle);
 
-                int size = Encoding.UTF8.GetByteCount(str) + 1;
+                int size = Encoding.UTF8.GetByteCount(str!) + 1;
                 *utf8String = Marshal.AllocCoTaskMem(size);
-                str.GetBytesFromEncoding((byte*)*utf8String, size, Encoding.UTF8);
+                str!.GetBytesFromEncoding((byte*)*utf8String, size, Encoding.UTF8);
                 return 0;
             }
             catch (Exception e)
@@ -207,7 +207,7 @@ namespace System.Runtime.InteropServices
                 if (methodId == IntPtr.Zero)
                     throw new ArgumentNullException();
 
-                object method = RuntimeType.GetMethodBase(type, new RuntimeMethodHandleInternal(methodId));
+                object? method = RuntimeType.GetMethodBase(type, new RuntimeMethodHandleInternal(methodId));
                 *result = nAllocHandle(frame, method);
                 return 0;
             }
@@ -243,7 +243,7 @@ namespace System.Runtime.InteropServices
                 case GetApiHelperEnum.type_getfield: del = (Type_GetFieldDelegate)Type_GetField; break;
                 case GetApiHelperEnum.type_gettype: del = (Type_GetTypeDelegate)Type_GetType; break;
                 case GetApiHelperEnum.type_get_element_type: del = (Type_GetElementTypeDelegate)Type_GetElementType; break;
-                case GetApiHelperEnum.type_getconstructor: del = (Type_GetConstrucotrDelegate)Type_GetConstructor; break;
+                case GetApiHelperEnum.type_getconstructor: del = (Type_GetConstructorDelegate)Type_GetConstructor; break;
                 case GetApiHelperEnum.string_alloc_utf8: del = (String_AllocUtf8Delegate)String_AllocUtf8; break;
                 case GetApiHelperEnum.utf8_getstring: del = (Utf8_GetStringDelegate)Utf8_GetString; break;
                 case GetApiHelperEnum.get_method_from_methodid: del = (GetMethodFromMethodIdDelegate)GetMethodFromMethodId; break;

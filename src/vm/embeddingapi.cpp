@@ -725,7 +725,9 @@ dotnet_error embeddingapi_box(dotnet_frame frame, dotnet_typeid type, void* pDat
             GCX_COOP();
             OBJECTREF nonNullableObj = argMT->Allocate();
             Nullable* src = (Nullable*)pData;
-            result = embeddingapi_impl_writemanagedmem(et, TypeHandle(argMT), (uint8_t*)nonNullableObj->UnBox(), (uint8_t*)src->ValueAddr(nullableMT), argMT->GetNumInstanceFieldBytes());
+            TypeHandle thArg(argMT);
+
+            result = embeddingapi_impl_writemanagedmem(et, thArg, (uint8_t*)nonNullableObj->UnBox(), (uint8_t*)src->ValueAddr(nullableMT), argMT->GetNumInstanceFieldBytes());
         }
         else
         {

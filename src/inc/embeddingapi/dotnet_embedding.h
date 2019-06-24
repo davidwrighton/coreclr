@@ -205,7 +205,7 @@ typedef struct _dotnet_embedding_api_group
 //    _dotnet_frame_typeid_out_object get_typeid_lifetime_object;
 //    _dotnet_frame_methodid_out_object get_methodid_lifetime_object;
     _dotnet_frame_typeid_out_object get_type_from_typeid; // ADDED
-//1    _dotnet_frame_methodid_typeid_out_object get_method_from_methodid; // ADDED
+    _dotnet_frame_methodid_typeid_out_object get_method_from_methodid; // ADDED
     _dotnet_typeid_typeid_out_int32 typeid_is_assignable_from;
     _dotnet_typeid_out_int32 typeid_is_valuetype;
     _dotnet_typeid_out_int32 typeid_field_size;
