@@ -2,7 +2,12 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+#ifndef WINDOWS
+#include <dlfcn.h>
+#define FAILED(x) (x < 0)
+#else
 #include <windows.h>
+#endif
 #include <dotnet_embedding.h>
 #include <stdio.h>
 
@@ -14,8 +19,13 @@ dotnet_embedding_api_group dotnet;
 
 void CallWriteLineHelloWorld();
 
-int __cdecl main()
+int 
+#ifdef WINDOWS
+__cdecl 
+#endif
+main()
 {
+#ifdef WINDOWS
     HMODULE hmodCoreShim = LoadLibraryW(L"coreshim.dll");
     if (hmodCoreShim == NULL)
     {
@@ -23,6 +33,10 @@ int __cdecl main()
         return 101;
     }
     dotnet_getapi getapi = (dotnet_getapi)GetProcAddress(hmodCoreShim, "coreclr_getapi");
+#else
+    void* coreclrmod = dlopen("coreclr", RTLD_GLOBAL);
+    dotnet_getapi getapi = (dotnet_getapi)dlsym(coreclrmod, "coreclr_getapi");
+#endif
     if (getapi == NULL)
     {
         ::printf("Getting getapi entrypoint failed\n");
@@ -73,7 +87,8 @@ void CallWriteLineHelloWorld()
     IF_FAIL_GO(dotnet.type_gettype(frame, "System.Void,System.Runtime", &void_type));
     IF_FAIL_GO(dotnet.get_typeid(void_type, &void_typeid));
 
-    dotnet_object argumentsToConsoleWriteline[] = { object_type };
+    dotnet_object argumentsToConsoleWriteline[1];
+    argumentsToConsoleWriteline[0] = object_type;
     dotnet_object writeline;
     dotnet_methodid writeline_id;
     IF_FAIL_GO(dotnet.type_getmethod(frame, console_type, "WriteLine", (dotnet_bindingflags)(dotnet_bindingflags_Public | dotnet_bindingflags_Static), argumentsToConsoleWriteline, 1, &writeline));

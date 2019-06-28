@@ -126,7 +126,11 @@ ExpandoEmbeddingApiFrame::~ExpandoEmbeddingApiFrame()
     delete _expando;
 }
 
-FrameForEmbeddingApi::FrameForEmbeddingApi(Thread *thread) :_expando(&_initialFrame), _nextFreeElement(NULL), _thread(thread), _next(thread->m_pEmbeddingApiFrame)
+FrameForEmbeddingApi::FrameForEmbeddingApi(Thread *thread) :
+_next(thread->m_pEmbeddingApiFrame),
+_expando(&_initialFrame), 
+_thread(thread), 
+_nextFreeElement(NULL)
 {
     thread->m_pEmbeddingApiFrame = this;
 }
@@ -798,19 +802,42 @@ dotnet_error embeddingapi_unbox(dotnet_frame frame, dotnet_object boxedObject, d
 }
 
 // Method invoke implementation
+dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, bool skipArg1, dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags);
+
 dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags)
 {
     ENTER_EMBEDDING_API;
 
     GCX_COOP();
 
-    ARG_SLOT *pArgSlots = (ARG_SLOT*)_alloca(sizeof(ARG_SLOT) * countOfArguments - 1);
+    MethodDesc *pMD = (MethodDesc*)methodId;
 
-    MethodDescCallSite methodToCall((MethodDesc*)methodId);
-
-    for (int i = 0; i < (countOfArguments - 1) && (result == S_OK); i++)
+    if (pMD->IsStatic())
     {
-        dotnet_invokeargument invokeArg = arguments[i+1];
+        MethodDescCallSite methodToCall(pMD);
+        result = embeddingapi_method_invoke_impl(methodToCall, false, frame, methodId, arguments, countOfArguments, flags);
+    }
+    else
+    {
+        OBJECTREF oref = ObjectToOBJECTREF(**(Object***)arguments[1].data);
+        GCPROTECT_BEGIN(oref);
+        MethodDescCallSite methodToCall(pMD, &oref);
+        result = embeddingapi_method_invoke_impl(methodToCall, true, frame, methodId, arguments, countOfArguments, flags);
+        GCPROTECT_END();
+    }
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, bool skipArg1, dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags)
+{
+    dotnet_error result = S_OK;
+    ARG_SLOT *pArgSlots = (ARG_SLOT*)_alloca(sizeof(ARG_SLOT) * (countOfArguments - 1));
+
+    int iArguments = 1;
+
+    for (int i = 0; iArguments < countOfArguments && (result == S_OK); i++, iArguments++)
+    {
+        dotnet_invokeargument invokeArg = arguments[iArguments];
         TypeHandle argumentTypeHandle = TypeHandle::FromPtr((void*)invokeArg.type);
         pArgSlots[i] = (ARG_SLOT)0;
 
@@ -903,7 +930,7 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
         }
     }
 
-    END_EMBEDDING_API;
+    return result;
 }
 
 template <class lambda_t>

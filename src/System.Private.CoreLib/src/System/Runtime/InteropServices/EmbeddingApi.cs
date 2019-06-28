@@ -250,7 +250,10 @@ namespace System.Runtime.InteropServices
             }
 
             if (del != null)
+            {
+                GCHandle.Alloc(del);
                 return Marshal.GetFunctionPointerForDelegate(del);
+            }
             else
                 return IntPtr.Zero;
         }
