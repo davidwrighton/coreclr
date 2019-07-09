@@ -151,6 +151,7 @@ typedef dotnet_error(*_dotnet_methodsignature)(dotnet_methodsignature);
 typedef dotnet_error(*_dotnet_methodsignature_out_int32)(dotnet_methodsignature, int32_t*);
 typedef dotnet_error(*_dotnet_methodsignature_out_typeid)(dotnet_methodsignature, dotnet_typeid*);
 typedef dotnet_error(*_dotnet_methodid_out_typeid)(dotnet_methodid, dotnet_typeid*);
+typedef dotnet_error(*_dotnet_methodid_out_int32)(dotnet_methodid, int32_t*);
 typedef dotnet_error(*_dotnet_frame_object_utf8str_bindingflags_out_object)(dotnet_frame, dotnet_object, const char *, dotnet_bindingflags, dotnet_object*);
 typedef dotnet_error(*_dotnet_frame_methodid_typeid_out_object)(dotnet_frame,dotnet_methodid,dotnet_typeid,dotnet_object*);
 typedef dotnet_error(*_dotnet_frame_object_typeid_voidptr_int32)(dotnet_frame, dotnet_object, dotnet_typeid, void*,int32_t);
@@ -213,6 +214,10 @@ typedef struct _dotnet_embedding_api_group
     _dotnet_typeid_out_int32 typeid_is_class;
     _dotnet_typeid_out_typeid typeid_enum_underlying_type;
     _dotnet_typeid_out_int32 typeid_is_byref;
+    _dotnet_typeid_out_int32 typeid_is_referencetype;
+    _dotnet_typeid_out_int32 typeid_is_pointer;
+    _dotnet_typeid_out_int32 typeid_is_array;
+    _dotnet_typeid_out_int32 typeid_is_szarray;
     _dotnet_methodid_out_methodsignature methodid_get_signature;
     _dotnet_methodsignature methodsignature_free;
     _dotnet_methodsignature_out_int32 methodsignature_get_argument_count;
@@ -220,6 +225,7 @@ typedef struct _dotnet_embedding_api_group
     _dotnet_methodsignature_out_typeid methodsignature_get_return_typeid;
     _dotnet_methodsignature_out_typeid methodsignature_get_nextarg_typeid;
     _dotnet_methodid_out_typeid get_method_typeid;
+    _dotnet_methodid_out_int32 methodid_is_constructor;
 
     
     // Object manipulation

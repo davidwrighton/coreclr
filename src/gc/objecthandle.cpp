@@ -1094,7 +1094,12 @@ void Ref_TraceNormalRoots(uint32_t condemned, uint32_t maxgen, ScanContext* sc, 
                 {
                     HHANDLETABLE hTable = walk->pBuckets[i]->pTable[getSlotNumber(sc)];
                     if (hTable)
-                        HndScanHandlesForGC(hTable, PromoteRefCounted, uintptr_t(sc), uintptr_t(fn), &type, 1, condemned, maxgen, flags );
+                    {
+                        PromoteRefCountedParams prcp;
+                        prcp.sc = sc;
+                        prcp.handle_callback = walk->pBuckets[i]->ref_counted_handle_callback;
+                        HndScanHandlesForGC(hTable, PromoteRefCounted, uintptr_t(&prcp), uintptr_t(fn), &type, 1, condemned, maxgen, flags );
+                    }
                 }
             walk = walk->pNext;
         }

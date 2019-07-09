@@ -13,6 +13,8 @@ dotnet_threadstarted embedding_api_thread_started = NULL;
 dotnet_threadstopped embedding_api_thread_stopped = NULL;
 dotnet_gc_event embedding_api_gc_event = NULL;
 
+#pragma clang optimize off
+
 dotnet_error embeddingapi_impl_writemanagedmem(CorElementType et, TypeHandle th, uint8_t* pPointerToManagedMemory, uint8_t* pUnmanagedData, int32_t cbDataUnmanaged);
 dotnet_error embeddingapi_impl_readmanagedmem(dotnet_frame frame, CorElementType et, TypeHandle th, uint8_t* pPointerToManagedMemory, uint8_t* pUnmanagedData, int32_t cbDataUnmanaged);
 
@@ -46,7 +48,8 @@ enum class GetApiHelperEnum
     type_getconstructor,
     string_alloc_utf8,
     utf8_getstring,
-    get_method_from_methodid
+    get_method_from_methodid,
+    get_method_typeid,
 };
 
 static void* GetApiFromManaged(GetApiHelperEnum api);
@@ -466,7 +469,7 @@ dotnet_error embeddingapi_toggleref_creategroup(dotnet_togglerefcallback callbac
 {
     ENTER_EMBEDDING_API;
 
-    GCHandleUtilities::GetGCHandleManager()->CreateHandleStore((ref_counted_handle_callback_func*)callback);
+    *togglerefgroup = (dotnet_togglerefgroup)GCHandleUtilities::GetGCHandleManager()->CreateHandleStore((ref_counted_handle_callback_func*)callback);
 
     END_EMBEDDING_API;
 }
@@ -612,6 +615,49 @@ dotnet_error embeddingapi_typeid_is_class(dotnet_typeid type, int32_t *resultBoo
     END_EMBEDDING_API;
 }
 
+dotnet_error embeddingapi_typeid_is_referencetype(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+    *resultBool = CorTypeInfo::IsObjRef(th.GetInternalCorElementType()) ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_pointer(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+
+    *resultBool = th.IsPointer() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_array(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+
+    *resultBool = th.IsArray() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_typeid_is_szarray(dotnet_typeid type, int32_t *resultBool)
+{
+    ENTER_EMBEDDING_API;
+    TypeHandle th = TypeHandle::FromPtr((void*)type);
+
+    if (th.IsArray())
+    {
+        *resultBool = th.AsArray()->GetInternalCorElementType() == ELEMENT_TYPE_SZARRAY;
+    }
+    else
+    {
+        *resultBool = 0;
+    }
+
+    END_EMBEDDING_API;
+}
+
 dotnet_error embeddingapi_typeid_enum_underlying_type(dotnet_typeid type, dotnet_typeid *underlyingType)
 {
     *underlyingType = 0;
@@ -635,6 +681,14 @@ dotnet_error embeddingapi_typeid_is_byref(dotnet_typeid type, int32_t *resultBoo
     ENTER_EMBEDDING_API;
     TypeHandle th = TypeHandle::FromPtr((void*)type);
     *resultBool = th.IsByRef() ? 1 : 0;
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_methodid_is_constructor(dotnet_methodid method, int32_t *isconstructor)
+{
+    ENTER_EMBEDDING_API;
+    MethodDesc *pMD = (MethodDesc*)method;
+    *isconstructor = pMD->IsCtor() ? 1 : 0;
     END_EMBEDDING_API;
 }
 
@@ -732,6 +786,10 @@ dotnet_error embeddingapi_box(dotnet_frame frame, dotnet_typeid type, void* pDat
             TypeHandle thArg(argMT);
 
             result = embeddingapi_impl_writemanagedmem(et, thArg, (uint8_t*)nonNullableObj->UnBox(), (uint8_t*)src->ValueAddr(nullableMT), argMT->GetNumInstanceFieldBytes());
+            if (result == 0)
+            {
+                result = embeddingapi_handle_alloc(frame, nonNullableObj, boxedObject);
+            }
         }
         else
         {
@@ -739,6 +797,10 @@ dotnet_error embeddingapi_box(dotnet_frame frame, dotnet_typeid type, void* pDat
             GCX_COOP();
             OBJECTREF obj = AllocateObject(th.GetMethodTable());
             result = embeddingapi_impl_writemanagedmem(et, th, (uint8_t*)obj->UnBox(), (uint8_t*)pData, th.GetSize());
+            if (result == 0)
+            {
+                result = embeddingapi_handle_alloc(frame, obj, boxedObject);
+            }
         }
     }
 
@@ -842,7 +904,7 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
         pArgSlots[i] = (ARG_SLOT)0;
 
         // 8 possible cases (NOTE: the concept of Primitive or enum value is the calling convention concept, not strictly the managed construct)
-        // 1. Primitive or enum value. Encode directly in ARG_SLOT
+        // 1. Primitive, pointer, or enum value. Encode directly in ARG_SLOT
         // 2. Reference type value. Encode translated value directly in ARG_SLOT
         // 3. Structure without gc pointers. Place pointer to structure in invokeargument directly into ARG_SLOT. (Works for byref and non-byref cases)
         // 4. Structure with gc pointers. Allocate new GC protected buffer of appropriate size, Copy data into it, but where copying GC pointers, perform translation. Place pointer to copied struct into ARG_SLOT
@@ -850,7 +912,7 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
         // 6. Reference type value BYREF. Allocate GC protected location for reference type. extract to there, once function call completes, marshal back as new BYREF
         // 7. Structure without gc pointers BYREF. As above for Structure without gc pointers exactly
         // 8. Structure with gc pointers BYREF. As above for Structure with gc pointers, but also copy out into original buffer
-
+        // 9. Pointer type BYREF. Place pointer to POINTER in invokeargument directly into ARG_SLOT.
         // TODO!: The above rules are quite possibly inaccurate. Further investigation of the reflection invoke call path is needed
         // In particular, its known that this isn't how the this pointer must be marshalled for instance methods, and byref returns aren't handled correctly here
 
@@ -860,7 +922,10 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
         if (CorTypeInfo::IsObjRef(etCallingConvention))
         {
             // Case 2.
-            pArgSlots[i] = (ARG_SLOT)**(Object***)invokeArg.data;
+            if ((*(Object**)invokeArg.data) == NULL)
+                pArgSlots[i] = NULL;
+            else
+                pArgSlots[i] = (ARG_SLOT)**(Object***)invokeArg.data;
         }
         else if (etCallingConvention == ELEMENT_TYPE_VALUETYPE)
         {
@@ -885,9 +950,9 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
                 // Case 6.
                 result = E_FAIL;
             }
-            if (!argumentTypeHandle.GetMethodTable()->ContainsPointers())
+            if (thByRefOf.IsTypeDesc() || !thByRefOf.GetMethodTable()->ContainsPointers())
             {
-                // Case 5 and 7
+                // Case 5, 7, and 9
                 pArgSlots[i] = (ARG_SLOT)invokeArg.data;
             }
             else
@@ -900,6 +965,7 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
         {
             // Case 1
             _ASSERTE(argumentTypeHandle.GetSize() <= sizeof(ARG_SLOT));
+            pArgSlots[i] = 0;
             memcpy(&pArgSlots[i], invokeArg.data, argumentTypeHandle.GetSize());
         }
     }
@@ -1066,7 +1132,7 @@ dotnet_error embeddingapi_impl_writemanagedmem(CorElementType et, TypeHandle th,
     // Copy any remaining non-reference objects
     {
         UINT additionalBytesToCopy = size - bytesCopiedSoFar;
-        memcpy(pPointerToManagedMemory + bytesCopiedSoFar, pUnmanagedData + bytesCopiedSoFar, additionalBytesToCopy);
+        memcpyNoGCRefs(pPointerToManagedMemory + bytesCopiedSoFar, pUnmanagedData + bytesCopiedSoFar, additionalBytesToCopy);
     }
 
     return S_OK;
@@ -1219,6 +1285,24 @@ dotnet_error embeddingapi_write_field_on_struct(void *structure, dotnet_fieldid 
         result = E_INVALIDARG;
     else
         memcpy(((uint8_t*)structure) + offset, data, size);
+    END_EMBEDDING_API;
+}
+
+dotnet_error embeddingapi_array_get_length(dotnet_object array, int32_t *pLength)
+{
+    if (array == NULL)
+        return E_INVALIDARG;
+    
+    if (pLength == NULL)
+        return E_INVALIDARG;
+
+    ENTER_EMBEDDING_API;
+
+    GCX_COOP();
+
+    ARRAYBASEREF objRef = (ARRAYBASEREF)embeddingapi_get_target(array);
+    *pLength = (int32_t)objRef->GetNumComponents();
+
     END_EMBEDDING_API;
 }
 
@@ -1403,13 +1487,18 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
                 SET_API(typeid_is_class);
                 SET_API(typeid_enum_underlying_type);
                 SET_API(typeid_is_byref);
+                SET_API(typeid_is_pointer);
+                SET_API(typeid_is_referencetype);
+                SET_API(typeid_is_array);
+                SET_API(typeid_is_szarray);
                 SET_API(methodid_get_signature);
                 SET_API(methodsignature_free);
                 SET_API(methodsignature_get_argument_count);
                 SET_API(methodsignature_is_instance);
                 SET_API(methodsignature_get_return_typeid);
                 SET_API(methodsignature_get_nextarg_typeid);
-//                SET_API(get_method_typeid);
+                MANAGED_API(get_method_typeid);
+                SET_API(methodid_is_constructor);
 
                 SET_API(read_field);
                 SET_API(write_field);
@@ -1426,6 +1515,7 @@ dotnet_error embeddingapi_getapi(const char *apiname, void** functions, int func
 
                 SET_API(method_invoke);
 
+                SET_API(array_get_length);
                 SET_API(array_read_element);
                 SET_API(array_write_element);
 

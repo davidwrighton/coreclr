@@ -217,6 +217,22 @@ namespace System.Runtime.InteropServices
             }
         }
 
+        private delegate int GetMethodTypeIdDelegate(IntPtr methodHandle, IntPtr* methodId);
+        private static int GetMethodTypeId(IntPtr methodId, IntPtr* typeId)
+        {
+            try
+            {
+                MethodBase? method = RuntimeType.GetMethodBase(null, new RuntimeMethodHandleInternal(methodId));;
+                RuntimeType? type = (RuntimeType?)method!.DeclaringType;
+                *typeId = type!.m_handle;
+                return 0;
+            }
+            catch (Exception e)
+            {
+                return Marshal.GetHRForException(e);
+            }
+        }
+
         private enum GetApiHelperEnum
         {
             // Keep this in sync with the enum in embeddingapi.cpp
@@ -229,6 +245,7 @@ namespace System.Runtime.InteropServices
             string_alloc_utf8,
             utf8_getstring,
             get_method_from_methodid,
+            get_method_typeid,
         }
 
         private static IntPtr GetApi(int helperEnum)
@@ -247,6 +264,7 @@ namespace System.Runtime.InteropServices
                 case GetApiHelperEnum.string_alloc_utf8: del = (String_AllocUtf8Delegate)String_AllocUtf8; break;
                 case GetApiHelperEnum.utf8_getstring: del = (Utf8_GetStringDelegate)Utf8_GetString; break;
                 case GetApiHelperEnum.get_method_from_methodid: del = (GetMethodFromMethodIdDelegate)GetMethodFromMethodId; break;
+                case GetApiHelperEnum.get_method_typeid: del = (GetMethodTypeIdDelegate)GetMethodTypeId; break;
             }
 
             if (del != null)
