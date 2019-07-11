@@ -1050,19 +1050,16 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
 
                 if (CorTypeInfo::IsObjRef(etReturnType))
                 {
-                    printf("ObjRef %p\n", (Object*)*(ARG_SLOT*)returnValueData);
                     _ASSERTE(cbReturnVal == sizeof(ARG_SLOT));
                     result = embeddingapi_handle_alloc(frame, ArgSlotToObj(*(ARG_SLOT*)returnValueData), (dotnet_object*)arguments[0].data);
                 }
                 else if ((etReturnType == ELEMENT_TYPE_VALUETYPE) && returnTypeHandle.GetMethodTable()->ContainsPointers())
                 {
-                                        printf("FAIL\n");
                     result = E_FAIL;
                 }
                 else
                 {
                     // Copy argslot contents back into data
-                                        printf("Not ObjRef\n");
                     memcpy(arguments[0].data, returnValueData, cbReturnVal);
                     result = S_OK;
                 }
@@ -1074,7 +1071,6 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
                 // Managed exception was thrown.
                 embeddingapi_handle_alloc(frame, pThrowable, pExceptionHandle);
                 memset(arguments[0].data, 0, cbReturnVal);
-                printf("exception\n");
                 result = E_FAIL;
             }
         }
