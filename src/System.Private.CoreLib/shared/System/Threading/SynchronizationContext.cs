@@ -16,7 +16,7 @@ namespace System.Threading
         public static SynchronizationContext? Current => Thread.CurrentThread._synchronizationContext;
 #endif
 
-        protected void SetWaitNotificationRequired() => _requireWaitNotification = true;
+        protected void SetWaitNotificationRequired() => _requireWaitNotification = false;//true;
 
         public bool IsWaitNotificationRequired() => _requireWaitNotification;
 
