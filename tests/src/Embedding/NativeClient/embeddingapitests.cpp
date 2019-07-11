@@ -106,7 +106,9 @@ void CallWriteLineHelloWorld()
     invokearguments[1].cbdata = sizeof(helloworld);
     invokearguments[1].type = object_typeid;
 
-    IF_FAIL_GO(dotnet.method_invoke(frame, writeline_id, invokearguments, 2, dotnet_methodinvoke_exception_catch));
+    dotnet_object gchException;
+
+    IF_FAIL_GO(dotnet.method_invoke(frame, writeline_id, invokearguments, 2, dotnet_methodinvoke_exception_catch, &gchException));
 
     dotnet.pop_frame(frame);
     return;

@@ -271,8 +271,15 @@ dotnet_error embeddingapi_handle_alloc(dotnet_frame frame, OBJECTREF objRef, dot
     CONTRACTL_END;
 
     if (objRef == NULL)
-        return NULL;
+    {
+        *handle = NULL;
+        return S_OK;
+    }
     
+#ifdef _DEBUG 
+    objRef->Validate();
+#endif
+
     FrameForEmbeddingApi* actualFrame = (FrameForEmbeddingApi*)frame;
     if (actualFrame->AllocEntry(objRef->GetAddress(), (void**)handle))
         return S_OK;
@@ -864,9 +871,9 @@ dotnet_error embeddingapi_unbox(dotnet_frame frame, dotnet_object boxedObject, d
 }
 
 // Method invoke implementation
-dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, bool skipArg1, dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags);
+dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, bool isStatic, dotnet_object *pExceptionHandle, dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags);
 
-dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags)
+dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags, dotnet_object *pExceptionHandle)
 {
     ENTER_EMBEDDING_API;
 
@@ -877,28 +884,47 @@ dotnet_error embeddingapi_method_invoke(dotnet_frame frame, dotnet_methodid meth
     if (pMD->IsStatic())
     {
         MethodDescCallSite methodToCall(pMD);
-        result = embeddingapi_method_invoke_impl(methodToCall, false, frame, methodId, arguments, countOfArguments, flags);
+        result = embeddingapi_method_invoke_impl(methodToCall, true, pExceptionHandle, frame, methodId, arguments, countOfArguments, flags);
     }
     else
     {
         OBJECTREF oref = ObjectToOBJECTREF(**(Object***)arguments[1].data);
         GCPROTECT_BEGIN(oref);
         MethodDescCallSite methodToCall(pMD, &oref);
-        result = embeddingapi_method_invoke_impl(methodToCall, true, frame, methodId, arguments, countOfArguments, flags);
+        result = embeddingapi_method_invoke_impl(methodToCall, false, pExceptionHandle, frame, methodId, arguments, countOfArguments, flags);
         GCPROTECT_END();
     }
     END_EMBEDDING_API;
 }
 
-dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, bool skipArg1, dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags)
+dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, bool isStatic, dotnet_object *pExceptionHandle, dotnet_frame frame, dotnet_methodid methodId, dotnet_invokeargument* arguments, int32_t countOfArguments, dotnet_methodinvoke_flags flags)
 {
+    *pExceptionHandle = NULL;
     dotnet_error result = S_OK;
-    ARG_SLOT *pArgSlots = (ARG_SLOT*)_alloca(sizeof(ARG_SLOT) * (countOfArguments - 1));
+    bool hasRetBufArg = methodToCall.HasRetBuffArg();
+
+    int argSlotCount = countOfArguments - 1;
+    int retBufArg = -1;
+
+    if (hasRetBufArg)
+    {
+        // TODO This is probably wrong with some HFA types. The CallTargetWorker has some exceptionally sketchy paths there.
+        argSlotCount++;
+        retBufArg = 0;
+        if (!isStatic)
+            retBufArg = 1;
+    }
+
+    ARG_SLOT *pArgSlots = (ARG_SLOT*)_alloca(sizeof(ARG_SLOT) * argSlotCount);
+    memset(pArgSlots, 0, sizeof(ARG_SLOT) * argSlotCount);
 
     int iArguments = 1;
 
     for (int i = 0; iArguments < countOfArguments && (result == S_OK); i++, iArguments++)
     {
+        if (i == retBufArg)
+            i++;
+
         dotnet_invokeargument invokeArg = arguments[iArguments];
         TypeHandle argumentTypeHandle = TypeHandle::FromPtr((void*)invokeArg.type);
         pArgSlots[i] = (ARG_SLOT)0;
@@ -932,7 +958,13 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
             if (!argumentTypeHandle.GetMethodTable()->ContainsPointers())
             {
                 // Case 3
-                pArgSlots[i] = (ARG_SLOT)invokeArg.data;
+                if (argumentTypeHandle.GetSize() > sizeof(ARG_SLOT))
+                    pArgSlots[i] = (ARG_SLOT)invokeArg.data;
+                else
+                {
+                    pArgSlots[i] = 0;
+                    memcpy(&pArgSlots[i], invokeArg.data, argumentTypeHandle.GetSize());
+                }
             }
             else
             {
@@ -972,27 +1004,79 @@ dotnet_error embeddingapi_method_invoke_impl(MethodDescCallSite &methodToCall, b
 
     if (result == S_OK)
     {
-        ARG_SLOT returnValue = methodToCall.Call_RetArgSlot(pArgSlots);
-
-        // There are a variety of return paths...
-        // Handle two of them
-
         TypeHandle returnTypeHandle = TypeHandle::FromPtr((void*)arguments[0].type);
         CorElementType etReturnType = returnTypeHandle.GetInternalCorElementType();
 
-        if (CorTypeInfo::IsObjRef(etReturnType))
+        ARG_SLOT returnVal;
+        void* returnValueData = &returnVal;
+        ARG_SLOT* returnValueParamToCallWithValueTypes = (ARG_SLOT*)returnValueData;
+        int cbReturnValParamToCallWithValueTypes = sizeof(ARG_SLOT);
+        int cbReturnVal = cbReturnValParamToCallWithValueTypes;
+        int typeHandleSize = 0;
+
+        if (etReturnType != ELEMENT_TYPE_VOID)
         {
-            result = embeddingapi_handle_alloc(frame, ArgSlotToObj(returnValue), (dotnet_object*)arguments[0].data);
+            if ((etReturnType == ELEMENT_TYPE_VALUETYPE) && returnTypeHandle.GetMethodTable()->ContainsPointers())
+            {
+                result = E_FAIL;
+            }
+            typeHandleSize = (int)returnTypeHandle.GetSize();
+
+            if (hasRetBufArg)
+            {
+                cbReturnVal = typeHandleSize;
+                returnValueData = (ARG_SLOT*)_alloca(typeHandleSize);
+                pArgSlots[retBufArg] = (ARG_SLOT)returnValueData;
+            }
+            else if (typeHandleSize > sizeof(ARG_SLOT))
+            {
+                cbReturnVal = typeHandleSize;
+                returnValueData = _alloca(typeHandleSize);
+                cbReturnValParamToCallWithValueTypes = cbReturnVal;
+                returnValueParamToCallWithValueTypes = (ARG_SLOT*)returnValueData;
+            }
         }
-        else if (etReturnType == ELEMENT_TYPE_VALUETYPE)
+
+        if (result != E_FAIL)
         {
-            result = E_FAIL;
-        }
-        else
-        {
-            // Copy argslot contents back into data
-            memcpy(arguments[0].data, &returnValue, returnTypeHandle.GetSize());
-            result = S_OK;
+            OBJECTREF pThrowable = NULL;
+            EX_TRY
+            {
+                methodToCall.CallWithValueTypes_RetArgSlot(pArgSlots, returnValueParamToCallWithValueTypes, cbReturnValParamToCallWithValueTypes);
+
+                // There are a variety of return paths...
+                // Handle two of them
+
+
+                if (CorTypeInfo::IsObjRef(etReturnType))
+                {
+                    printf("ObjRef %p\n", (Object*)*(ARG_SLOT*)returnValueData);
+                    _ASSERTE(cbReturnVal == sizeof(ARG_SLOT));
+                    result = embeddingapi_handle_alloc(frame, ArgSlotToObj(*(ARG_SLOT*)returnValueData), (dotnet_object*)arguments[0].data);
+                }
+                else if ((etReturnType == ELEMENT_TYPE_VALUETYPE) && returnTypeHandle.GetMethodTable()->ContainsPointers())
+                {
+                                        printf("FAIL\n");
+                    result = E_FAIL;
+                }
+                else
+                {
+                    // Copy argslot contents back into data
+                                        printf("Not ObjRef\n");
+                    memcpy(arguments[0].data, returnValueData, cbReturnVal);
+                    result = S_OK;
+                }
+            }
+            EX_CATCH_THROWABLE(&pThrowable);
+
+            if (pThrowable != NULL)
+            {
+                // Managed exception was thrown.
+                embeddingapi_handle_alloc(frame, pThrowable, pExceptionHandle);
+                memset(arguments[0].data, 0, cbReturnVal);
+                printf("exception\n");
+                result = E_FAIL;
+            }
         }
     }
 

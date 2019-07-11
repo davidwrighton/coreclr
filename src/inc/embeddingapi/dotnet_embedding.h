@@ -117,7 +117,7 @@ typedef dotnet_error(*_dotnet_object_out_fieldid)(dotnet_object,dotnet_fieldid*)
 typedef dotnet_error(*_dotnet_fieldid_out_typeid)(dotnet_fieldid,dotnet_typeid*);
 typedef dotnet_error(*_dotnet_frame_typeid_out_object)(dotnet_frame,dotnet_typeid,dotnet_object*);
 typedef dotnet_error(*_dotnet_frame_methodid_out_object)(dotnet_frame,dotnet_methodid,dotnet_object*);
-typedef dotnet_error(*_dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags)(dotnet_frame,dotnet_methodid,dotnet_invokeargument*,int32_t,dotnet_methodinvoke_flags);
+typedef dotnet_error(*_dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags_out_object)(dotnet_frame,dotnet_methodid,dotnet_invokeargument*,int32_t,dotnet_methodinvoke_flags,dotnet_object*);
 typedef dotnet_error(*_dotnet_frame_object_fieldid_voidptr_int32)(dotnet_frame,dotnet_object,dotnet_fieldid,void*,int32_t);
 typedef dotnet_error(*_dotnet_object_fieldid_voidptr_int32)(dotnet_object,dotnet_fieldid,void*,int32_t);
 typedef dotnet_error(*_dotnet_frame_fieldid_voidptr_int32)(dotnet_frame,dotnet_fieldid,void*,int32_t);
@@ -243,7 +243,7 @@ typedef struct _dotnet_embedding_api_group
     _dotnet_object_out_utf8str_out_int32 utf8_getstring; // ADDED
 
     // Method Invoke
-    _dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags method_invoke;
+    _dotnet_frame_methodid_invokeargumentptr_int32_methodinvokeflags_out_object method_invoke;
 
     // arrays api
     _dotnet_object_out_int32 array_get_length;

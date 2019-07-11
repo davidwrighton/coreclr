@@ -328,6 +328,11 @@ public:
         return &m_methodSig;
     }
 
+    bool HasRetBuffArg()
+    {
+        return !!m_argIt.HasRetBuffArg();
+    }
+
     //
     // Call_RetXXX definition macros:
     //
