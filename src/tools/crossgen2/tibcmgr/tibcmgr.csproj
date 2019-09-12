@@ -2,8 +2,7 @@
   <Import Project="$([MSBuild]::GetPathOfFileAbove(dir.props))" />
 
   <PropertyGroup>
-    <AssemblyName>crossgen2</AssemblyName>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>tibcmgr</AssemblyName>
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp3.0</TargetFramework>
     <NoWarn>8002,NU1701</NoWarn>

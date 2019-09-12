@@ -24,6 +24,7 @@ namespace ILCompiler
 
         private Dictionary<string, string> _inputFilePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private Dictionary<string, string> _referenceFilePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<string> _tibcFiles = Array.Empty<string>();
 
         private string _outputFilePath;
         private bool _isInputVersionBubble;
@@ -41,6 +42,7 @@ namespace ILCompiler
         private string _systemModuleName = DefaultSystemModule;
         private bool _tuning;
         private bool _partial;
+        private bool _nonlocalizedGenericsIbc;
 
         private string _singleMethodTypeName;
         private string _singleMethodName;
@@ -106,6 +108,7 @@ namespace ILCompiler
         {
             IReadOnlyList<string> inputFiles = Array.Empty<string>();
             IReadOnlyList<string> referenceFiles = Array.Empty<string>();
+            
 
             bool optimize = false;
             bool optimizeSpace = false;
@@ -123,12 +126,14 @@ namespace ILCompiler
 
                 syntax.DefineOption("h|help", ref _help, "Help message for ILC");
                 syntax.DefineOptionList("r|reference", ref referenceFiles, "Reference file(s) for compilation");
+                syntax.DefineOptionList("tibc", ref _tibcFiles, "Ibc file(s) for compilation");
                 syntax.DefineOption("o|out", ref _outputFilePath, "Output file path");
                 syntax.DefineOption("O", ref optimize, "Enable optimizations");
                 syntax.DefineOption("Os", ref optimizeSpace, "Enable optimizations, favor code space");
                 syntax.DefineOption("Ot", ref optimizeTime, "Enable optimizations, favor code speed");
                 syntax.DefineOption("inputbubble", ref _isInputVersionBubble, "True when the entire input forms a version bubble (default = per-assembly bubble)");
                 syntax.DefineOption("tuning", ref _tuning, "Generate IBC tuning image");
+                syntax.DefineOption("nonlocalgenerics_fromprofiledata", ref _nonlocalizedGenericsIbc, "Consider as part of profile data generics which are not local to the module");
                 syntax.DefineOption("partial", ref _partial, "Generate partial image driven by profile");
                 syntax.DefineOption("compilebubblegenerics", ref _includeGenericsFromVersionBubble, "Compile instantiations from reference modules used in the current module");
                 syntax.DefineOption("dgmllog", ref _dgmlLogFileName, "Save result of dependency analysis as DGML");
@@ -277,11 +282,14 @@ namespace ILCompiler
             var logger = new Logger(Console.Out, _isVerbose);
 
             List<ModuleDesc> referenceableModules = new List<ModuleDesc>();
+            List<ModuleDesc> inputModulesForProfileData = new List<ModuleDesc>();
             foreach (var inputFile in inputFilePaths)
             {
                 try
                 {
-                    referenceableModules.Add(typeSystemContext.GetModuleFromPath(inputFile.Value));
+                    ModuleDesc module = typeSystemContext.GetModuleFromPath(inputFile.Value);
+                    referenceableModules.Add(module);
+                    inputModulesForProfileData.Add(module);
                 }
                 catch { } // Ignore non-managed pe files
             }
@@ -295,7 +303,7 @@ namespace ILCompiler
                 catch { } // Ignore non-managed pe files
             }
 
-            ProfileDataManager profileDataManager = new ProfileDataManager(logger, referenceableModules);
+            ProfileDataManager profileDataManager = new ProfileDataManager(logger, referenceableModules, inputModulesForProfileData, _tibcFiles, context:typeSystemContext, nonLocalizedGenerics: _nonlocalizedGenericsIbc);
 
             CompilationModuleGroup compilationGroup;
             List<ICompilationRootProvider> compilationRoots = new List<ICompilationRootProvider>();
