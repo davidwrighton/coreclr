@@ -62,7 +62,7 @@ namespace tibcmgr
                 syntax.HandleHelp = false;
                 syntax.HandleErrors = true;
 
-                syntax.DefineOption("h|help", ref _help, "Help message for tibcmgr");
+                syntax.DefineCommand("help", ref _command, "Help message for tibcmgr");
                 syntax.DefineCommand("convert", ref _command, "Convert an ibc file to a tibc file");
                 syntax.DefineOptionList("r|reference", ref referenceFiles, "Reference file(s) for token reference in ibc file");
                 syntax.DefineOption("systemmodule", ref _systemModuleName, "System module name (default: System.Private.CoreLib)");
@@ -72,6 +72,10 @@ namespace tibcmgr
                 syntax.DefineParameter("il", ref _inputILFile, "Input il file that matches with the ibc file");
                 syntax.DefineParameter("output", ref _outputTibcFile, "Output file in tibc format");
             });
+
+            if (_command == "help")
+                _help = true;
+
             if (waitForDebugger)
             {
                 Console.WriteLine("Waiting for debugger to attach. Press ENTER to continue");
