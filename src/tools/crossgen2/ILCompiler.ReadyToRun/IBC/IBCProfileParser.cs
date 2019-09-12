@@ -17,7 +17,7 @@ using ILCompiler.Win32Resources;
 
 namespace ILCompiler.IBC
 {
-    internal class IBCProfileParser
+    public class IBCProfileParser
     {
         private readonly List<ModuleDesc> _possibleReferenceModules;
 
@@ -39,6 +39,11 @@ namespace ILCompiler.IBC
                 return EmptyProfileData.Singleton;
             }
 
+            return ParseIBCDataFromByteArray(ecmaModule, ibcDataSection);
+        }
+
+        public ProfileData ParseIBCDataFromByteArray(EcmaModule ecmaModule, byte[] ibcDataSection)
+        {
             var reader = new IBCDataReader();
             int pos = 0;
             bool basicBlocksOnly = false;
