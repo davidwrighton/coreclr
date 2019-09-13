@@ -69,7 +69,9 @@ namespace ILCompiler
         public static void SerializeToJSon(ProfileData data, Stream stream)
         {
             CustomAttributeTypeNameFormatter customAttributeTypeNameFormatter = new CustomAttributeTypeNameFormatter();
-            using (Utf8JsonWriter json = new Utf8JsonWriter(stream))
+            JsonWriterOptions options = new JsonWriterOptions();
+            options.Indented = true;
+            using (Utf8JsonWriter json = new Utf8JsonWriter(stream, options))
             {
                 json.WriteStartObject();
                 json.WriteBoolean("PartialNGen", data.PartialNGen);
@@ -118,8 +120,8 @@ namespace ILCompiler
 
                     json.WriteStartObject();
                     json.WriteString(jsonType, methodType);
-                    json.WriteString(jsonMethod, methodType);
-                    json.WriteString(jsonSig, methodType);
+                    json.WriteString(jsonMethod, methodName);
+                    json.WriteString(jsonSig, methodSignature);
                     if (methodInstantiationArguments != null)
                     {
                         json.WriteStartArray(jsonInst);
@@ -146,11 +148,13 @@ namespace ILCompiler
             Start,
             OuterObject,
             ParsingPartialNGen,
+            ParsingMethodsProperty,
             ParsingMethodsArray,
             ParsingMethod,
             ParsingMethodType,
             ParsingMethodName,
             ParsingMethodSignature,
+            ParsingMethodInstantiationProperty,
             ParsingMethodInstantiation,
             ParsingMethodFlags,
             ParsingMethodInstCount,
@@ -190,7 +194,7 @@ namespace ILCompiler
                     {
                         if (m.Signature.ToString(includeReturnType: true) == methodSignature)
                         {
-                            if ((methodInstantiationArguments != null) && (methodInstantiationArguments.Count != uninstantiatedMethod.Instantiation.Length))
+                            if ((methodInstantiationArguments != null) && (methodInstantiationArguments.Count != m.Instantiation.Length))
                             {
                                 // Not matching number of generic arguments on method for instantiated method
                             }
@@ -201,8 +205,8 @@ namespace ILCompiler
                             else
                             {
                                 uninstantiatedMethod = m;
+                                break;
                             }
-                            break;
                         }
                     }
                     catch
@@ -297,8 +301,12 @@ namespace ILCompiler
 
                                 MethodDesc m = LoadMethodFromStrings(context, logger, methodType, methodName, methodSignature, methodInstantiationArguments, methodInstCount);
 
-                                MethodProfileData profData = new MethodProfileData(m, flags.Value, 0xFFFFFFFF);
-                                data.Add(profData);
+                                state = ProfileDataParseState.ParsingMethodsArray;
+                                if (m != null)
+                                {
+                                    MethodProfileData profData = new MethodProfileData(m, flags.Value, 0xFFFFFFFF);
+                                    data.Add(profData);
+                                }
                                 break;
 
                             default:
@@ -314,10 +322,11 @@ namespace ILCompiler
                                 case ProfileDataParseState.OuterObject:
                                     if (json.ValueTextEquals("PartialNGen"))
                                         state = ProfileDataParseState.ParsingPartialNGen;
+                                    else if (json.ValueTextEquals("Methods"))
+                                        state = ProfileDataParseState.ParsingMethodsProperty;
                                     else
                                         unknownProperty = true;
                                     break;
-
                                 case ProfileDataParseState.ParsingMethod:
                                     if (json.ValueTextEquals("Type"))
                                         state = ProfileDataParseState.ParsingMethodType;
@@ -329,6 +338,11 @@ namespace ILCompiler
                                         state = ProfileDataParseState.ParsingMethodFlags;
                                     else if (json.ValueTextEquals("InstCount"))
                                         state = ProfileDataParseState.ParsingMethodInstCount;
+                                    else if (json.ValueTextEquals("Inst"))
+                                    {
+                                        state = ProfileDataParseState.ParsingMethodInstantiationProperty;
+                                        methodInstantiationArguments = new List<string>();
+                                    }
                                     else
                                         unknownProperty = true;
                                     break;
@@ -348,34 +362,16 @@ namespace ILCompiler
 
                     case JsonTokenType.StartArray:
                         {
-                            bool unknownProperty = false;
                             switch (state)
                             {
-                                case ProfileDataParseState.OuterObject:
-                                    if (json.ValueTextEquals("Methods"))
-                                        state = ProfileDataParseState.ParsingMethodsArray;
-                                    else
-                                        unknownProperty = true;
+                                case ProfileDataParseState.ParsingMethodsProperty:
+                                    state = ProfileDataParseState.ParsingMethodsArray;
                                     break;
-                                case ProfileDataParseState.ParsingMethod:
-                                    if (json.ValueTextEquals("Inst"))
-                                    {
-                                        state = ProfileDataParseState.ParsingMethodInstantiation;
-                                        methodInstantiationArguments = new List<string>();
-                                    }
-                                    else
-                                        unknownProperty = true;
+                                case ProfileDataParseState.ParsingMethodInstantiationProperty:
+                                    state = ProfileDataParseState.ParsingMethodInstantiation;
                                     break;
                                 default:
                                     throw new Exception("Ibc parse error");
-                            }
-                            if (unknownProperty)
-                            {
-                                // Unknown property value, skip
-                                if (!json.TrySkip())
-                                {
-                                    throw new Exception($"Unable to parse {json.GetString()}");
-                                }
                             }
                         }
 
@@ -414,11 +410,11 @@ namespace ILCompiler
                         switch (state)
                         {
                             case ProfileDataParseState.ParsingMethodName:
-                                methodName = parsedString; break;
+                                methodName = parsedString; state = ProfileDataParseState.ParsingMethod; break;
                             case ProfileDataParseState.ParsingMethodType:
-                                methodType = parsedString; break;
+                                methodType = parsedString; state = ProfileDataParseState.ParsingMethod; break;
                             case ProfileDataParseState.ParsingMethodSignature:
-                                methodSignature = parsedString; break;
+                                methodSignature = parsedString; state = ProfileDataParseState.ParsingMethod; break;
                             case ProfileDataParseState.ParsingMethodInstantiation:
                                 methodInstantiationArguments.Add(parsedString); break;
                             default:

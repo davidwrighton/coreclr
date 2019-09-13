@@ -94,7 +94,8 @@ namespace ILCompiler.IBC
                     // scenarioMask will be 0 in unprocessed or V1 IBC data.
                     if (scenarioMask == 0)
                     {
-                        throw new NotImplementedException();
+                        // TODO Compute RunOnce and RunNever from basic block data
+                        scenarioMask = scenarioMaskIfMissing;
                         /*                        Debug.Assert(fullScenarioMask == 1, "Token entry not owned by one scenario");
                                                 // We have to compute the RunOnceMethod and RunNeverMethod flags.
                                                 entry.Flags = result.GetFlags(entry.Flags, section, entry.Token);
@@ -437,6 +438,10 @@ namespace ILCompiler.IBC
                     return context.GetWellKnownType(WellKnownType.Boolean);
                 case CorElementType.ELEMENT_TYPE_CHAR:
                     return context.GetWellKnownType(WellKnownType.Char);
+                case CorElementType.ELEMENT_TYPE_I:
+                    return context.GetWellKnownType(WellKnownType.IntPtr);
+                case CorElementType.ELEMENT_TYPE_U:
+                    return context.GetWellKnownType(WellKnownType.UIntPtr);
                 case CorElementType.ELEMENT_TYPE_I1:
                     return context.GetWellKnownType(WellKnownType.SByte);
                 case CorElementType.ELEMENT_TYPE_U1:
@@ -547,6 +552,8 @@ namespace ILCompiler.IBC
                 case CorElementType.ELEMENT_TYPE_VOID:
                 case CorElementType.ELEMENT_TYPE_BOOLEAN:
                 case CorElementType.ELEMENT_TYPE_CHAR:
+                case CorElementType.ELEMENT_TYPE_I:
+                case CorElementType.ELEMENT_TYPE_U:
                 case CorElementType.ELEMENT_TYPE_I1:
                 case CorElementType.ELEMENT_TYPE_U1:
                 case CorElementType.ELEMENT_TYPE_I2:

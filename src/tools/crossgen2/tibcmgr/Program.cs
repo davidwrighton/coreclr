@@ -160,7 +160,47 @@ namespace tibcmgr
 
             Console.WriteLine($"Generated {_outputTibcFile}");
 
+            ProfileData reloadedProfData = ProfileData.ReadJsonData(logger, File.ReadAllBytes(_outputTibcFile), typeSystemContext);
+            if (!CompareProfileDataEqual(logger, _inputIbcFile, parsedProfileData, _outputTibcFile, reloadedProfData))
+            {
+                Console.WriteLine($"Error: Compare of {_outputTibcFile} to {_inputIbcFile} failed");
+                return -1;
+            }
+
             return 0;
+        }
+
+        bool CompareProfileDataEqual(Logger logger, string leftName, ProfileData left, string rightName, ProfileData right)
+        {
+            if (left.PartialNGen != right.PartialNGen)
+            {
+                logger.Writer.WriteLine($"PartialNGen: {leftName}:{left.PartialNGen} {rightName}:{right.PartialNGen}");
+            }
+            List<MethodProfileData> leftDataList = new List<MethodProfileData>(left.GetAllMethodProfileData());
+            List<MethodProfileData> rightDataList = new List<MethodProfileData>(right.GetAllMethodProfileData());
+
+            if (leftDataList.Count != rightDataList.Count)
+            {
+                logger.Writer.WriteLine($"ProfileDataCount: {leftName}:{leftDataList.Count} {rightName}:{rightDataList.Count}");
+                return false;
+            }
+
+            for (int i = 0; i < leftDataList.Count; i++)
+            {
+                MethodProfileData leftData = leftDataList[i];
+                MethodProfileData rightData = rightDataList[i];
+                if (leftData.Method != rightData.Method)
+                {
+                    logger.Writer.WriteLine($"Method: {leftName}:{leftData.Method} {rightName}:{rightData.Method}");
+                    return false;
+                }
+                if (leftData.Flags != rightData.Flags)
+                {
+                    logger.Writer.WriteLine($"Flags: {leftName}:{leftData.Flags} {rightName}:{rightData.Flags} on method {leftData.Method}");
+                    return false;
+                }
+            }
+            return true;
         }
 
         static int Main(string[] args)
