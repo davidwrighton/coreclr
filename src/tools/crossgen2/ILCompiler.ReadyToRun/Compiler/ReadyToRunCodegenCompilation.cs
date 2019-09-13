@@ -276,6 +276,14 @@ namespace ILCompiler
                 {
                     Logger.Writer.WriteLine($"Info: Method `{ResilientNameComputation(method)}` was not compiled because `{ex.Message}` requires runtime JIT");
                 }
+                catch (CodeGenerationFailedException ex)
+                {
+                    if (!_jitConfigProvider.HasFlag(CorJitFlag.CORJIT_FLAG_BBINSTR))
+                    {
+                        throw;
+                    }
+                    Logger.Writer.WriteLine($"Info: Method `{ResilientNameComputation(method)}` was not compiled because `{ex.Message}` requires runtime JIT");
+                }
             }
         }
 

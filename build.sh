@@ -445,11 +445,12 @@ build_CoreLib()
 
     if [[ "$__BuildManagedTools" -eq "1" ]]; then
         echo "Publishing crossgen2 for $__DistroRid"
-        "$__ProjectRoot/dotnet.sh" publish --self-contained -r $__DistroRid -c $__BuildType -o "$__BinDir/crossgen2" "$__ProjectRoot/src/tools/crossgen2/crossgen2/crossgen2.csproj"
-        cp "$__BinDir/libclrjit.so" "$__BinDir/crossgen2/libclrjitilc.so"
-        cp "$__BinDir/libjitinterface.so" "$__BinDir/crossgen2/libjitinterface.so"
+        "$__ProjectRoot/dotnet.sh" publish --self-contained -r $__DistroRid -c $__BuildType -o "$__BinDir/crossgen2published" "$__ProjectRoot/src/tools/crossgen2/crossgen2/crossgen2.csproj"
+        cp "$__BinDir/libclrjit.so" "$__BinDir/crossgen2published/libclrjitilc.so"
+        cp "$__BinDir/libjitinterface.so" "$__BinDir/crossgen2published/libjitinterface.so"
         echo "Publishing tibcmgr for $__DistroRid"
-        "$__ProjectRoot/dotnet.sh" publish --self-contained -r $__DistroRid -c $__BuildType -o "$__BinDir/tibcmgr" "$__ProjectRoot/src/tools/crossgen2/tibcmgr/tibcmgr.csproj"
+        echo "$__ProjectRoot/dotnet.sh" publish --self-contained -r $__DistroRid -c $__BuildType -o "$__BinDir/tibcmgrpublished" "$__ProjectRoot/src/tools/crossgen2/tibcmgr/tibcmgr.csproj"
+        "$__ProjectRoot/dotnet.sh" publish --self-contained -r $__DistroRid -c $__BuildType -o "$__BinDir/tibcmgrpublished" "$__ProjectRoot/src/tools/crossgen2/tibcmgr/tibcmgr.csproj"
     fi
 
     local __CoreLibILDir=$__BinDir/IL
