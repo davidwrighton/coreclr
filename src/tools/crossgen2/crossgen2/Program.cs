@@ -126,7 +126,7 @@ namespace ILCompiler
 
                 syntax.DefineOption("h|help", ref _help, "Help message for ILC");
                 syntax.DefineOptionList("r|reference", ref referenceFiles, "Reference file(s) for compilation");
-                syntax.DefineOptionList("tibc", ref _tibcFiles, "Ibc file(s) for compilation");
+                syntax.DefineOptionList("t|tibc", ref _tibcFiles, "Tibc file(s) for compilation");
                 syntax.DefineOption("o|out", ref _outputFilePath, "Output file path");
                 syntax.DefineOption("O", ref optimize, "Enable optimizations");
                 syntax.DefineOption("Os", ref optimizeSpace, "Enable optimizations, favor code space");
