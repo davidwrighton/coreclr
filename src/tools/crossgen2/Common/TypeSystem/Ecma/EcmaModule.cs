@@ -263,6 +263,18 @@ namespace Internal.TypeSystem.Ecma
             }
         }
 
+        private static bool NamespaceNameMatch(MetadataStringComparer stringComparer, StringHandle stringHandle, string compareString)
+        {
+            if (compareString == null)
+            {
+                return stringHandle.IsNil;
+            }
+            else
+            {
+                return stringComparer.Equals(stringHandle, compareString);
+            }
+        }
+
         public sealed override MetadataType GetType(string nameSpace, string name, bool throwIfNotFound = true)
         {
             var stringComparer = _metadataReader.StringComparer;
@@ -271,8 +283,8 @@ namespace Internal.TypeSystem.Ecma
             foreach (var typeDefinitionHandle in _metadataReader.TypeDefinitions)
             {
                 var typeDefinition = _metadataReader.GetTypeDefinition(typeDefinitionHandle);
-                if (stringComparer.Equals(typeDefinition.Name, name) &&
-                    stringComparer.Equals(typeDefinition.Namespace, nameSpace))
+                if (stringComparer.Equals(typeDefinition.Name, name) && 
+                    NamespaceNameMatch(stringComparer, typeDefinition.Namespace, nameSpace))
                 {
                     return (MetadataType)GetType((EntityHandle)typeDefinitionHandle);
                 }
@@ -282,7 +294,7 @@ namespace Internal.TypeSystem.Ecma
             {
                 var exportedType = _metadataReader.GetExportedType(exportedTypeHandle);
                 if (stringComparer.Equals(exportedType.Name, name) &&
-                    stringComparer.Equals(exportedType.Namespace, nameSpace))
+                    NamespaceNameMatch(stringComparer, exportedType.Namespace, nameSpace))
                 {
                     if (exportedType.IsForwarder)
                     {
