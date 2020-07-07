@@ -13,6 +13,7 @@ parameters:
   # 'all' - the queues used for non-PR, non-CI test runs, e.g., Manual or Scheduled runs. Typically this is all available queues.
   # 'corefx' - the queues used for a corefx test run.
   helixQueueGroup: 'pr'
+  ignoreDependencyOnBuildJobs: false
   jobParameters: {}
 
 jobs:
@@ -25,6 +26,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Linux_arm'), in(parameters.platformGroup, 'all', 'gcstress')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: arm
       osGroup: Linux
@@ -33,15 +35,12 @@ jobs:
         image: ubuntu-16.04-cross-14.04-23cacb0-20190528233931
         registry: mcr
       helixQueues:
-      # Ubuntu.1404.Arm32.Open is used only by CI while Ubuntu.1604.Arm32.Open serves PRs and scheduled builds.
-      - ${{ if and(eq(variables['System.TeamProject'], 'public'), in(parameters.helixQueueGroup, 'ci')) }}:
-        - Ubuntu.1404.Arm32.Open
-      - ${{ if and(eq(variables['System.TeamProject'], 'public'), notIn(parameters.helixQueueGroup, 'ci')) }}:
-        - (Ubuntu.1804.Arm32.Open)Ubuntu.1604.Arm32.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm32v7-09a60ed-20190620155854
+      - ${{ if eq(variables['System.TeamProject'], 'public') }}:
+        - (Ubuntu.1804.Arm32.Open)Ubuntu.1804.Armarch.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm32v7-30f6673-20190814153226
       - ${{ if eq(variables['System.TeamProject'], 'internal') }}:
-        - (Debian.9.Arm32)Ubuntu.1604.Arm32@mcr.microsoft.com/dotnet-buildtools/prereqs:debian-9-helix-arm32v7-74c9941-20190620155841
-        - (Ubuntu.1604.Arm32)Ubuntu.1604.Arm32@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-16.04-helix-arm32v7-a45aeeb-20190620160312
-        - (Ubuntu.1804.Arm32)Ubuntu.1604.Arm32@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm32v7-09a60ed-20190620155854
+        - (Debian.9.Arm32)Ubuntu.1804.Armarch@mcr.microsoft.com/dotnet-buildtools/prereqs:debian-9-helix-arm32v7-74c9941-20190620155841
+        - (Ubuntu.1804.Arm32)Ubuntu.1804.Armarch@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-16.04-helix-arm32v7-a45aeeb-20190620160312
+        - (Ubuntu.1804.Arm32)Ubuntu.1804.Armarch@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm32v7-09a60ed-20190620155854
       crossrootfsDir: '/crossrootfs/arm'
       ${{ insert }}: ${{ parameters.jobParameters }}
 
@@ -50,6 +49,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Linux_arm64'), in(parameters.platformGroup, 'all', 'gcstress')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: arm64
       osGroup: Linux
@@ -59,12 +59,12 @@ jobs:
         registry: mcr
       helixQueues:
       - ${{ if eq(variables['System.TeamProject'], 'public') }}:
-        - (Ubuntu.1804.Arm64.Open)Ubuntu.1604.Arm64.Docker.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm64v8-a45aeeb-20190620155855
+        - (Ubuntu.1804.Arm64.Open)Ubuntu.1804.Armarch.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm64v8-a45aeeb-20190620155855
       - ${{ if and(eq(variables['System.TeamProject'], 'public'), notIn(parameters.helixQueueGroup, 'pr', 'ci', 'corefx')) }}:
-        - (Debian.9.Arm64.Open)Ubuntu.1604.Arm64.Docker.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:debian-9-helix-arm64v8-74c9941-20190620155840
+        - (Debian.9.Arm64.Open)Ubuntu.1804.Armarch.Open@mcr.microsoft.com/dotnet-buildtools/prereqs:debian-9-helix-arm64v8-74c9941-20190620155840
       - ${{ if eq(variables['System.TeamProject'], 'internal') }}:
-        - (Debian.9.Arm64)Ubuntu.1604.Arm64.Docker@mcr.microsoft.com/dotnet-buildtools/prereqs:debian-9-helix-arm64v8-74c9941-20190620155840
-        - (Ubuntu.1804.Arm64)Ubuntu.1604.Arm64.Docker@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm64v8-a45aeeb-20190620155855
+        - (Debian.9.Arm64)Ubuntu.1804.Armarch@mcr.microsoft.com/dotnet-buildtools/prereqs:debian-9-helix-arm64v8-74c9941-20190620155840
+        - (Ubuntu.1804.Arm64)Ubuntu.1804.Armarch@mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-helix-arm64v8-a45aeeb-20190620155855
       crossrootfsDir: '/crossrootfs/arm64'
       ${{ insert }}: ${{ parameters.jobParameters }}
 
@@ -73,6 +73,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Linux_musl_x64'), eq(parameters.platformGroup, 'all')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: x64
       osGroup: Linux
@@ -86,6 +87,7 @@ jobs:
       - ${{ if eq(variables['System.TeamProject'], 'internal') }}:
         - (Alpine.38.Amd64)ubuntu.1604.amd64@mcr.microsoft.com/dotnet-buildtools/prereqs:alpine-3.8-helix-09ca40b-20190508143246
         - (Alpine.39.Amd64)ubuntu.1604.amd64@mcr.microsoft.com/dotnet-buildtools/prereqs:alpine-3.9-helix-09ca40b-20190508143246
+        - (Alpine.310.Amd64)Ubuntu.1604.Amd64@mcr.microsoft.com/dotnet-buildtools/prereqs:alpine-3.10-helix-3043688-20190918214010
       ${{ insert }}: ${{ parameters.jobParameters }}
 
 # Linux musl arm64
@@ -93,6 +95,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Linux_musl_arm64'), eq(parameters.platformGroup, 'all')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: arm64
       osGroup: Linux
@@ -113,6 +116,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Linux_rhel6_x64'), eq(parameters.platformGroup, 'all')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: x64
       osGroup: Linux
@@ -131,6 +135,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Linux_x64'), in(parameters.platformGroup, 'all', 'gcstress')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: x64
       osGroup: Linux
@@ -178,6 +183,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'OSX_x64'), eq(parameters.platformGroup, 'all')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: x64
       osGroup: OSX
@@ -200,6 +206,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Windows_NT_x64'), in(parameters.platformGroup, 'all', 'gcstress')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: x64
       osGroup: Windows_NT
@@ -225,6 +232,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Windows_NT_x86'), in(parameters.platformGroup, 'all', 'gcstress')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: x86
       osGroup: Windows_NT
@@ -248,6 +256,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Windows_NT_arm'), eq(parameters.platformGroup, 'all')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: arm
       osGroup: Windows_NT
@@ -267,6 +276,7 @@ jobs:
 - ${{ if or(containsValue(parameters.platforms, 'Windows_NT_arm64'), eq(parameters.platformGroup, 'all')) }}:
   - template: ${{ parameters.jobTemplate }}
     parameters:
+      ignoreDependencyOnBuildJobs: ${{ parameters.ignoreDependencyOnBuildJobs }}
       buildConfig: ${{ parameters.buildConfig }}
       archType: arm64
       osGroup: Windows_NT

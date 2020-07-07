@@ -5392,6 +5392,7 @@ DebuggerModule* Debugger::LookupOrCreateModule(Module* pModule, AppDomain *pAppD
     // If it doesn't exist, create it.
     if (dmod == NULL)
     {
+        LOG((LF_CORDB, LL_INFO1000, "D::LOCM dmod for m=0x%x ad=0x%x not found, creating.\n", pModule, pAppDomain));
         HRESULT hr = S_OK;
         EX_TRY
         {
@@ -5406,7 +5407,8 @@ DebuggerModule* Debugger::LookupOrCreateModule(Module* pModule, AppDomain *pAppD
     // The module must be in the AppDomain that was requested
     _ASSERTE( (dmod == NULL) || (dmod->GetAppDomain() == pAppDomain) );
 
-    LOG((LF_CORDB, LL_INFO1000, "D::LOCM m=0x%x ad=0x%x -> dm=0x%x\n", pModule, pAppDomain, dmod));
+    LOG((LF_CORDB, LL_INFO1000, "D::LOCM m=0x%x ad=0x%x -> dm=0x%x(Mod=0x%x, DomFile=0x%x, AD=0x%x)\n",
+        pModule, pAppDomain, dmod, dmod->GetRuntimeModule(), dmod->GetDomainFile(), dmod->GetAppDomain()));
     return dmod;
 }
 
@@ -10014,8 +10016,10 @@ void Debugger::UnloadModule(Module* pRuntimeModule,
         }
         _ASSERTE(module != NULL);
 
-        STRESS_LOG3(LF_CORDB, LL_INFO10000, "D::UM: Unloading Mod:%#08x, %#08x, %#08x\n",
-            pRuntimeModule, pAppDomain, pRuntimeModule->IsIStream());
+        STRESS_LOG6(LF_CORDB, LL_INFO10000,
+            "D::UM: Unloading RTMod:%#08x (DomFile: %#08x, IsISStream:%#08x); DMod:%#08x(RTMod:%#08x DomFile: %#08x)\n",
+            pRuntimeModule, pRuntimeModule->GetDomainFile(), pRuntimeModule->IsIStream(),
+            module, module->GetRuntimeModule(), module->GetDomainFile());
 
         // Note: the appdomain the module was loaded in must match the appdomain we're unloading it from. If it doesn't,
         // then we've either found the wrong DebuggerModule in LookupModule or we were passed bad data.
@@ -15306,6 +15310,22 @@ HRESULT Debugger::FuncEvalSetup(DebuggerIPCE_FuncEvalInfo *pEvalInfo,
         return CORDBG_E_ILLEGAL_AT_GC_UNSAFE_POINT;
     }
 
+    if (filterContext != NULL && ::GetSP(filterContext) != ALIGN_DOWN(::GetSP(filterContext), STACK_ALIGN_SIZE))
+    {
+        // SP is not aligned, we cannot do a FuncEval here
+        LOG((LF_CORDB, LL_INFO1000, "D::FES SP is unaligned"));
+        return CORDBG_E_FUNC_EVAL_BAD_START_POINT;
+    }
+
+    if (MethodDescBackpatchInfoTracker::IsLockedByAnyThread())
+    {
+        // A thread may have suspended for the debugger while holding the slot backpatching lock while trying to enter
+        // cooperative GC mode. If the FuncEval calls a method that is eligible for slot backpatching (virtual or interface
+        // methods that are eligible for tiering), the FuncEval may deadlock on trying to acquire the same lock. Fail the
+        // FuncEval to avoid the issue.
+        return CORDBG_E_FUNC_EVAL_BAD_START_POINT;
+    }
+
     // Create a DebuggerEval to hold info about this eval while its in progress. Constructor copies the thread's
     // CONTEXT.
     DebuggerEval *pDE = new (interopsafe, nothrow) DebuggerEval(filterContext, pEvalInfo, fInException);
@@ -15437,6 +15457,13 @@ HRESULT Debugger::FuncEvalSetupReAbort(Thread *pThread, Thread::ThreadAbortReque
     if (filterContext == NULL)
     {
         return CORDBG_E_ILLEGAL_AT_GC_UNSAFE_POINT;
+    }
+
+    if (::GetSP(filterContext) != ALIGN_DOWN(::GetSP(filterContext), STACK_ALIGN_SIZE))
+    {
+        // SP is not aligned, we cannot do a FuncEval here
+        LOG((LF_CORDB, LL_INFO1000, "D::FESRA: SP is unaligned"));
+        return CORDBG_E_FUNC_EVAL_BAD_START_POINT;
     }
 
     // Create a DebuggerEval to hold info about this eval while its in progress. Constructor copies the thread's

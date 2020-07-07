@@ -323,9 +323,12 @@ namespace System.IO
                     return new string(_charBuffer, 0, charsRead);
                 }
 
+                // Since we could be reading from an untrusted data source, limit the initial size of the
+                // StringBuilder instance we're about to get or create. It'll expand automatically as needed.
+
                 if (sb == null)
                 {
-                    sb = StringBuilderCache.Acquire(stringLength); // Actual string length in chars may be smaller.
+                    sb = StringBuilderCache.Acquire(Math.Min(stringLength, StringBuilderCache.MaxBuilderSize)); // Actual string length in chars may be smaller.
                 }
 
                 sb.Append(_charBuffer, 0, charsRead);
@@ -390,6 +393,28 @@ namespace System.IO
                 {
                     numBytes <<= 1;
                 }
+
+                // We do not want to read even a single byte more than necessary.
+                //
+                // Subtract pending bytes that the decoder may be holding onto. This assumes that each
+                // decoded char corresponds to one or more bytes. Note that custom encodings or encodings with
+                // a custom replacement sequence may violate this assumption.
+                if (numBytes > 1)
+                {
+                    DecoderNLS? decoder = _decoder as DecoderNLS;
+                    // For internal decoders, we can check whether the decoder has any pending state.
+                    // For custom decoders, assume that the decoder has pending state.
+                    if (decoder == null || decoder.HasState)
+                    {
+                        numBytes -= 1;
+
+                        // The worst case is charsRemaining = 2 and UTF32Decoder holding onto 3 pending bytes. We need to read just
+                        // one byte in this case.
+                        if (_2BytesPerChar && numBytes > 2)
+                            numBytes -= 2;
+                    }
+                }
+
                 if (numBytes > MaxCharBytesSize)
                 {
                     numBytes = MaxCharBytesSize;
